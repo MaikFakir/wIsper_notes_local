@@ -1,0 +1,8 @@
+faster-whisper
+gradio
+resemblyzer
+librosa
+ffmpeg-python
+scikit-learn
+torch
+numpy
