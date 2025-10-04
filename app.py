@@ -11,6 +11,7 @@ from sklearn.cluster import DBSCAN
 import torch
 import os
 import json
+import soundfile as sf
 import shutil
 from datetime import datetime
 
@@ -37,139 +38,230 @@ print("Modelo de codificación de voz cargado.")
 AUDIO_LIBRARY_PATH = "audio_library"
 METADATA_FILE = os.path.join(AUDIO_LIBRARY_PATH, "metadata.json")
 
-def get_library_contents():
-    """Lee los metadatos y devuelve una lista de audios para mostrar."""
-    if not os.path.exists(METADATA_FILE):
-        return []
+# --- Nuevas funciones para el sistema de carpetas ---
 
-    with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-        try:
-            metadata = json.load(f)
-        except json.JSONDecodeError:
-            return []
+def get_directory_contents(path="."):
+    """
+    Obtiene el contenido de un directorio dentro de la biblioteca de audios.
+    Prefija las carpetas con '[C]' para distinguirlas.
+    """
+    path = os.path.normpath(path)
+    if path.startswith("..") or os.path.isabs(path):
+        path = "."
 
-    # Devolver una lista de tuplas (nombre_archivo, transcripcion)
-    return [(filename, data.get("transcription", "No disponible")) for filename, data in metadata.items()]
+    base_path = os.path.join(AUDIO_LIBRARY_PATH, path)
+    contents = []
+    if not os.path.exists(base_path):
+        os.makedirs(base_path)
 
-def refresh_library_list():
-    """Actualiza la lista de audios en la interfaz."""
-    return gr.update(choices=[item[0] for item in get_library_contents()])
+    for item in sorted(os.listdir(base_path)):
+        if os.path.isdir(os.path.join(base_path, item)):
+            contents.append(f"[C] {item}")
+        elif item.lower().endswith('.wav'):
+            contents.append(item)
 
+    return contents
 
-def rename_library_item(current_filename, new_filename):
-    """Renombra un archivo en la biblioteca y actualiza los metadatos."""
-    if not current_filename or not new_filename:
-        return "Selecciona un archivo y proporciona un nuevo nombre.", gr.update(), gr.update()
+def update_library_browser(current_path="."):
+    """Actualiza el navegador de la biblioteca y la ruta visible."""
+    choices = get_directory_contents(current_path)
+    return gr.update(choices=choices, value=None), gr.update(value=current_path)
 
-    # Añadir extensión .wav si no está presente
-    if not new_filename.lower().endswith('.wav'):
-        new_filename += '.wav'
+def create_folder_in_library(current_path, new_folder):
+    """Crea una nueva carpeta en la ruta actual."""
+    if not new_folder.strip() or ".." in new_folder or "/" in new_folder:
+        return "Nombre de carpeta inválido.", gr.update(), gr.update(), gr.update()
 
-    current_filepath = os.path.join(AUDIO_LIBRARY_PATH, current_filename)
-    new_filepath = os.path.join(AUDIO_LIBRARY_PATH, new_filename)
+    folder_path = os.path.join(AUDIO_LIBRARY_PATH, current_path, new_folder)
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+        status = f"Carpeta '{new_folder}' creada."
+        browser_update, path_update = update_library_browser(current_path)
+        return status, browser_update, path_update, gr.update(value="")
+    else:
+        return f"La carpeta '{new_folder}' ya existe.", gr.update(), gr.update(), gr.update()
 
-    if not os.path.exists(current_filepath):
-        return f"Error: El archivo '{current_filename}' no existe.", gr.update(), gr.update()
+def navigate_up(current_path):
+    """Navega al directorio padre y actualiza el estado."""
+    new_path = "."
+    if current_path != ".":
+        new_path = os.path.dirname(current_path)
+    return new_path
 
-    if os.path.exists(new_filepath):
-        return f"Error: Ya existe un archivo con el nombre '{new_filename}'.", gr.update(), gr.update()
+def handle_selection_and_path_update(current_path, selection):
+    """
+    Decide si navegar a una carpeta o cargar un archivo.
+    Actualiza el estado de la ruta actual si se selecciona una carpeta.
+    """
+    if selection is None:
+        return current_path
 
-    # Renombrar el archivo de audio
-    os.rename(current_filepath, new_filepath)
+    if selection.startswith("[C]"):
+        folder_name = selection.replace("[C] ", "")
+        new_path = os.path.join(current_path, folder_name)
+        return new_path
+    else:
+        return current_path
 
-    # Actualizar los metadatos
+def load_selected_file(selection, current_path):
+    """Carga el audio y la transcripción de un archivo seleccionado."""
+    if selection is None or selection.startswith("[C]"):
+        return None, ""
+
+    file_path_in_library = os.path.join(AUDIO_LIBRARY_PATH, current_path, selection)
+    metadata_key = os.path.normpath(os.path.join(current_path, selection))
+
+    transcription = "Transcripción no encontrada."
     if os.path.exists(METADATA_FILE):
-        with open(METADATA_FILE, 'r+', encoding='utf-8') as f:
+        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
             try:
                 metadata = json.load(f)
-                if current_filename in metadata:
-                    metadata[new_filename] = metadata.pop(current_filename)
-
-                f.seek(0)
-                json.dump(metadata, f, indent=4, ensure_ascii=False)
-                f.truncate()
+                transcription = metadata.get(metadata_key, {}).get("transcription", "Transcripción no encontrada.")
             except json.JSONDecodeError:
                 pass
 
-    return f"Archivo renombrado a '{new_filename}'.", gr.update(choices=[item[0] for item in get_library_contents()], value=new_filename), gr.update(value="")
+    return file_path_in_library, transcription
 
 
-def delete_from_library(filename_to_delete):
-    """Elimina un audio y su metadato de la biblioteca."""
-    if not filename_to_delete:
-        # Devuelve 4 valores para coincidir con los outputs, sin hacer cambios
-        return "No se ha seleccionado ningún archivo para eliminar.", gr.update(), gr.update(), gr.update()
-
-    # Eliminar archivo de audio
-    audio_path_to_delete = os.path.join(AUDIO_LIBRARY_PATH, filename_to_delete)
-    if os.path.exists(audio_path_to_delete):
-        os.remove(audio_path_to_delete)
-
-    # Eliminar metadato
-    if os.path.exists(METADATA_FILE):
-        with open(METADATA_FILE, 'r+', encoding='utf-8') as f:
-            try:
-                metadata = json.load(f)
-                if filename_to_delete in metadata:
-                    del metadata[filename_to_delete]
-
-                f.seek(0)
-                json.dump(metadata, f, indent=4, ensure_ascii=False)
-                f.truncate()
-            except json.JSONDecodeError:
-                pass  # El archivo de metadatos está corrupto o vacío
-
-    # Devolver una confirmación y actualizar la interfaz para limpiar los campos
-    return (
-        f"Archivo '{filename_to_delete}' eliminado.",
-        gr.update(choices=[item[0] for item in get_library_contents()], value=None),
-        gr.update(value=None),
-        gr.update(value="")
-    )
-
-
-def save_to_library(audio_path, transcription):
-    """Guarda el audio y su transcripción en la biblioteca."""
+def save_to_library(current_path, audio_path, transcription):
+    """Guarda el audio y su transcripción en la ruta actual de la biblioteca."""
     if not audio_path or not transcription:
         return "Nada que guardar."
 
     # Crear un nombre de archivo único con timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"audio_{timestamp}.wav"
-    new_audio_path = os.path.join(AUDIO_LIBRARY_PATH, filename)
 
-    # Copiar el archivo de audio a la biblioteca
-    shutil.copy(audio_path, new_audio_path)
+    # La ruta completa donde se guardará el archivo físico
+    physical_save_path = os.path.join(AUDIO_LIBRARY_PATH, current_path, filename)
+
+    # La clave para los metadatos (ruta relativa desde la raíz de la biblioteca)
+    metadata_key = os.path.normpath(os.path.join(current_path, filename))
+
+    try:
+        # Cargar y convertir el audio a WAV
+        wav, sr = librosa.load(audio_path, sr=16000)
+        sf.write(physical_save_path, wav, sr)
+    except Exception as e:
+        return f"Error al guardar el archivo: {e}"
 
     # Cargar y actualizar metadatos
+    metadata = {}
     if os.path.exists(METADATA_FILE):
-        with open(METADATA_FILE, 'r+', encoding='utf-8') as f:
+        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
             try:
                 metadata = json.load(f)
             except json.JSONDecodeError:
-                metadata = {}
+                pass  # El archivo se sobreescribirá
 
-            metadata[filename] = {
-                "transcription": transcription,
-                "original_path": audio_path,
-                "timestamp": timestamp
-            }
-            f.seek(0)
-            json.dump(metadata, f, indent=4, ensure_ascii=False)
-            f.truncate()
+    metadata[metadata_key] = {
+        "transcription": transcription,
+        "timestamp": timestamp
+    }
+
+    with open(METADATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, indent=4, ensure_ascii=False)
+
+    return f"¡Guardado! Audio '{filename}' añadido a '{current_path}'."
+
+
+def rename_library_item(current_path, selection, new_name):
+    """Renombra un archivo o carpeta en la ruta actual."""
+    if not selection or not new_name.strip():
+        return "Selecciona un item y proporciona un nuevo nombre.", gr.update(), gr.update(), gr.update()
+
+    old_name = selection.replace("[C] ", "")
+    new_name = new_name.strip()
+    old_path_full = os.path.join(AUDIO_LIBRARY_PATH, current_path, old_name)
+    new_path_full = os.path.join(AUDIO_LIBRARY_PATH, current_path, new_name)
+
+    if not os.path.exists(old_path_full):
+        return f"Error: El item '{old_name}' no existe.", gr.update(), gr.update(), gr.update()
+    if os.path.exists(new_path_full):
+        return f"Error: Ya existe un item con el nombre '{new_name}'.", gr.update(), gr.update(), gr.update()
+
+    # Renombrar el archivo/carpeta físico
+    os.rename(old_path_full, new_path_full)
+
+    # Actualizar metadatos
+    metadata = {}
+    if os.path.exists(METADATA_FILE):
+        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
+            try:
+                metadata = json.load(f)
+            except json.JSONDecodeError:
+                pass
+
+    new_metadata = {}
+    old_metadata_key_base = os.path.normpath(os.path.join(current_path, old_name))
+    new_metadata_key_base = os.path.normpath(os.path.join(current_path, new_name))
+
+    if os.path.isdir(new_path_full):  # Si es una carpeta
+        # Actualizar todas las claves que comiencen con la ruta de la carpeta antigua
+        for key, value in metadata.items():
+            if key.startswith(old_metadata_key_base + os.sep):
+                new_key = new_metadata_key_base + key[len(old_metadata_key_base):]
+                new_metadata[new_key] = value
+            elif key != old_metadata_key_base:
+                new_metadata[key] = value
+    else:  # Si es un archivo
+        old_metadata_key = old_metadata_key_base
+        new_metadata_key = new_metadata_key_base
+        # Añadir extensión .wav si no está presente en el nuevo nombre
+        if not new_name.lower().endswith('.wav'):
+             new_metadata_key += '.wav'
+             os.rename(new_path_full, new_path_full + '.wav')
+
+        for key, value in metadata.items():
+            if key == old_metadata_key:
+                new_metadata[new_metadata_key] = value
+            else:
+                new_metadata[key] = value
+
+    with open(METADATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(new_metadata, f, indent=4, ensure_ascii=False)
+
+    return f"Item renombrado a '{new_name}'.", *update_library_browser(current_path), gr.update(value="")
+
+
+def delete_from_library(current_path, selection):
+    """Elimina un archivo o carpeta de la ruta actual."""
+    if not selection:
+        return "No se ha seleccionado ningún item.", gr.update(), gr.update(), gr.update(), gr.update()
+
+    item_name = selection.replace("[C] ", "")
+    path_to_delete_full = os.path.join(AUDIO_LIBRARY_PATH, current_path, item_name)
+
+    if not os.path.exists(path_to_delete_full):
+         return f"Error: El item '{item_name}' no existe.", gr.update(), gr.update(), gr.update(), gr.update()
+
+    # Eliminar archivo/carpeta físico
+    if os.path.isdir(path_to_delete_full):
+        shutil.rmtree(path_to_delete_full)
     else:
-         with open(METADATA_FILE, 'w', encoding='utf-8') as f:
-            metadata = {
-                filename: {
-                    "transcription": transcription,
-                    "original_path": audio_path,
-                    "timestamp": timestamp
-                }
-            }
-            json.dump(metadata, f, indent=4, ensure_ascii=False)
+        os.remove(path_to_delete_full)
 
+    # Actualizar metadatos
+    metadata = {}
+    if os.path.exists(METADATA_FILE):
+        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
+            try:
+                metadata = json.load(f)
+            except json.JSONDecodeError:
+                pass
 
-    return f"¡Guardado! Audio '{filename}' añadido a la biblioteca."
+    new_metadata = {}
+    metadata_key_to_delete = os.path.normpath(os.path.join(current_path, item_name))
+
+    for key, value in metadata.items():
+        # No incluir la clave a eliminar ni ninguna clave dentro de la carpeta eliminada
+        if not (key == metadata_key_to_delete or key.startswith(metadata_key_to_delete + os.sep)):
+            new_metadata[key] = value
+
+    with open(METADATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(new_metadata, f, indent=4, ensure_ascii=False)
+
+    return f"Item '{item_name}' eliminado.", *update_library_browser(current_path), gr.update(value=None), gr.update(value="")
 
 
 # --- 4. FUNCIÓN PRINCIPAL DE PROCESAMIENTO ---
@@ -249,60 +341,112 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
     # Estado para almacenar la ruta del último audio procesado
     processed_audio_path_state = gr.State(value=None)
 
-    gr.Markdown("## 🎙️ Transcriptor con Diarización (Resemblyzer + DBSCAN)")
-    gr.Markdown("Graba una conversación. El sistema transcribirá y agrupará los segmentos por hablante.")
-
     with gr.Row():
-        audio_input = gr.Audio(sources=["microphone", "upload"], type="filepath", label="🎤 Graba o sube tu audio aquí")
+        with gr.Sidebar():
+            gr.Markdown("## 📚 Biblioteca de Audios")
 
-    with gr.Row():
-        text_box = gr.Textbox(label="📝 Transcripción con Hablantes", lines=15, interactive=False)
+            # Estado para la ruta actual en la biblioteca
+            current_path_state = gr.State(value=".")
 
-    with gr.Row():
-        save_button = gr.Button("💾 Guardar en la Biblioteca")
+            # UI para la creación de carpetas
+            with gr.Row():
+                new_folder_name = gr.Textbox(label="Nombre de la Carpeta", placeholder="Escribe y presiona Enter...", scale=3)
+                create_folder_button = gr.Button("➕ Crear Carpeta", scale=1)
 
-    status_box = gr.Textbox(label="ℹ️ Estado", lines=1, interactive=False)
+            # UI para la navegación
+            with gr.Row():
+                up_button = gr.Button("⬆️ Subir")
+                refresh_button = gr.Button("🔄 Refrescar")
 
-    # --- Sección de la Biblioteca ---
-    with gr.Accordion("📚 Biblioteca de Audios", open=False):
-        library_list = gr.Dropdown(label="Audios Guardados", choices=[item[0] for item in get_library_contents()])
-        with gr.Row():
-            refresh_button = gr.Button("🔄 Refrescar")
+            current_path_display = gr.Textbox(label="Ruta Actual", value=".", interactive=False)
+
+            # Lista de archivos y carpetas
+            library_browser = gr.Radio(label="Contenido", choices=[], interactive=True)
+
+            # Controles de renombrar y eliminar
+            with gr.Row():
+                new_name_input = gr.Textbox(label="Nuevo nombre", placeholder="Nuevo nombre para el item...", scale=3)
+                rename_button = gr.Button("✏️ Renombrar", scale=1)
             delete_button = gr.Button("🗑️ Eliminar Seleccionado")
 
-        with gr.Row():
-            new_name_input = gr.Textbox(label="Nuevo nombre para el archivo seleccionado", placeholder="Escribe el nuevo nombre aquí...")
-            rename_button = gr.Button("✏️ Renombrar")
+            # Reproductor de audio
+            selected_audio_player = gr.Audio(label="Audio Seleccionado", type="filepath")
 
-        selected_audio_player = gr.Audio(label="Audio Seleccionado", type="filepath")
+        with gr.Column():
+            gr.Markdown("## 🎙️ Transcriptor con Diarización (Resemblyzer + DBSCAN)")
+            gr.Markdown("Graba una conversación. El sistema transcribirá y agrupará los segmentos por hablante.")
+
+            audio_input = gr.Audio(sources=["microphone", "upload"], type="filepath", label="🎤 Graba o sube tu audio aquí")
+            text_box = gr.Textbox(label="📝 Transcripción", lines=15, interactive=False)
+
+            with gr.Row():
+                save_button = gr.Button("💾 Guardar en la Biblioteca")
+
+            status_box = gr.Textbox(label="ℹ️ Estado", lines=1, interactive=False)
 
     # --- Lógica de la Interfaz ---
 
-    def on_select_library_item(filename):
-        """
-        Se activa al seleccionar un item de la biblioteca.
-        Carga el audio y la transcripción correspondiente.
-        """
-        if not filename:
-            return None, ""
+    # --- Lógica de la Interfaz ---
 
-        audio_path = os.path.join(AUDIO_LIBRARY_PATH, filename)
+    # Cargar el contenido inicial de la biblioteca
+    demo.load(update_library_browser, outputs=[library_browser, current_path_display])
 
-        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-            metadata = json.load(f)
-
-        transcription = metadata.get(filename, {}).get("transcription", "Transcripción no encontrada.")
-
-        return audio_path, transcription
-
-    # Conexiones de eventos
+    # Conexiones de eventos de la transcripción principal
     audio_input.change(transcribir_con_diarizacion, inputs=audio_input, outputs=[text_box, processed_audio_path_state])
-    save_button.click(save_to_library, inputs=[processed_audio_path_state, text_box], outputs=[status_box]).then(refresh_library_list, outputs=library_list)
+    save_button.click(
+        save_to_library,
+        inputs=[current_path_state, processed_audio_path_state, text_box],
+        outputs=[status_box]
+    ).then(
+        update_library_browser,
+        inputs=[current_path_state],
+        outputs=[library_browser, current_path_display]
+    )
 
-    library_list.change(on_select_library_item, inputs=library_list, outputs=[selected_audio_player, text_box])
-    refresh_button.click(refresh_library_list, outputs=library_list)
-    delete_button.click(delete_from_library, inputs=library_list, outputs=[status_box, library_list, selected_audio_player, text_box])
-    rename_button.click(rename_library_item, inputs=[library_list, new_name_input], outputs=[status_box, library_list, new_name_input])
+    # Conexiones de la biblioteca
+    create_folder_button.click(
+        create_folder_in_library,
+        inputs=[current_path_state, new_folder_name],
+        outputs=[status_box, library_browser, current_path_display, new_folder_name]
+    )
+
+    up_button.click(
+        navigate_up,
+        inputs=[current_path_state],
+        outputs=[current_path_state]
+    ).then(
+        update_library_browser,
+        inputs=[current_path_state],
+        outputs=[library_browser, current_path_display]
+    )
+
+    refresh_button.click(update_library_browser, inputs=[current_path_state], outputs=[library_browser, current_path_display])
+
+    library_browser.change(
+        handle_selection_and_path_update,
+        inputs=[current_path_state, library_browser],
+        outputs=[current_path_state]
+    ).then(
+        update_library_browser,
+        inputs=[current_path_state],
+        outputs=[library_browser, current_path_display]
+    ).then(
+        load_selected_file,
+        inputs=[library_browser, current_path_state],
+        outputs=[selected_audio_player, text_box]
+    )
+
+    rename_button.click(
+        rename_library_item,
+        inputs=[current_path_state, library_browser, new_name_input],
+        outputs=[status_box, library_browser, current_path_display, new_name_input]
+    )
+
+    delete_button.click(
+        delete_from_library,
+        inputs=[current_path_state, library_browser],
+        outputs=[status_box, library_browser, current_path_display, selected_audio_player, text_box]
+    )
 
 
 if __name__ == "__main__":
