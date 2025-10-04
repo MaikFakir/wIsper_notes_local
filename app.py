@@ -19,7 +19,7 @@ COMPUTE_TYPE = "float16" if torch.cuda.is_available() else "int8"
 # Cargar modelo Whisper. 'base' es un buen equilibrio entre velocidad y precisión para timestamps.
 # 'turbo' no es un tamaño de modelo estándar, lo cambiamos por 'base'.
 print("Cargando modelo de transcripción...")
-transcription_model = WhisperModel("base", device=DEVICE, compute_type=COMPUTE_TYPE)
+transcription_model = WhisperModel("turbo", device=DEVICE, compute_type=COMPUTE_TYPE)
 print("Modelo de transcripción cargado.")
 
 # Cargar encoder de voces. Es recomendable usar CPU para evitar conflictos de VRAM.
