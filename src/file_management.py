@@ -37,7 +37,8 @@ def get_directory_contents(path="."):
 def update_library_browser(current_path="."):
     """Actualiza el navegador de la biblioteca y la ruta visible."""
     choices = get_directory_contents(current_path)
-    return gr.update(choices=choices, value=None), gr.update(value=current_path)
+    display_path = "Biblioteca Principal" if current_path == "." else current_path
+    return gr.update(choices=choices, value=None), gr.update(value=display_path)
 
 def create_folder_in_library(current_path, new_folder):
     """Crea una nueva carpeta en la ruta actual."""
