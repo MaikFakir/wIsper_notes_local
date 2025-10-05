@@ -1,0 +1,32 @@
+/* Estilos personalizados para la aplicación de Gradio */
+
+/* Ejemplo: Cambiar el color de fondo principal */
+.gradio-container {
+    background-color: #f0f2f5;
+}
+
+/* Estilo para los botones */
+.gr-button {
+    background-color: #007bff;
+    color: white;
+    border-radius: 8px;
+    font-weight: bold;
+}
+
+.gr-button:hover {
+    background-color: #0056b3;
+}
+
+/* Agrupación de botones de acción */
+#action-buttons {
+    border: 1px solid #e0e0e0;
+    padding: 10px;
+    border-radius: 8px;
+    background-color: #ffffff;
+}
+
+/* Estilo para la lista de la biblioteca */
+.gr-radio > label > div {
+    display: flex;
+    flex-direction: column;
+}
