@@ -114,16 +114,18 @@ def transcribir_con_diarizacion(audio_path):
         clustering = DBSCAN(eps=0.5, min_samples=1, metric="cosine").fit(embeddings_array)
         labels = clustering.labels_
 
-        # Asignar hablante a cada segmento original
+        # Asignar hablante a cada segmento original usando una clave inmutable
         diarization_results = {}
         for i, segment in enumerate(valid_segments_for_diarization):
-            diarization_results[segment] = labels[i]
+            key = (segment.start, segment.end)
+            diarization_results[key] = labels[i]
 
         # 5️⃣ Construir la transcripción final formateada
         print("Construyendo transcripción final...")
         final_transcription = []
         for segment in segments:
-            speaker_label = diarization_results.get(segment, -1) # Usar -1 si no fue diarizado
+            key = (segment.start, segment.end)
+            speaker_label = diarization_results.get(key, -1) # Usar -1 si no fue diarizado
             speaker_name = f"Hablante {speaker_label + 1}" if speaker_label != -1 else "Desconocido"
             final_transcription.append({
                 "speaker": speaker_name,
