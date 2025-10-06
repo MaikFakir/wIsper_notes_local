@@ -20,38 +20,39 @@ with gr.Blocks(theme=gr.themes.Soft(), css="style.css") as demo:
 
     with gr.Row():
         with gr.Sidebar():
-            gr.Markdown("## 📚 Biblioteca de Audios")
+            with gr.Group(elem_classes="sidebar-wrapper"):
+                gr.Markdown("## 📚 Biblioteca de Audios")
 
-            # Estado para la ruta actual en la biblioteca
-            current_path_state = gr.State(value=".")
+                # Estado para la ruta actual en la biblioteca
+                current_path_state = gr.State(value=".")
 
-            # UI de navegación y visualización de ruta
-            with gr.Row():
-                up_button = gr.Button("⬆️ Subir")
-                refresh_button = gr.Button("🔄 Refrescar")
-            current_path_display = gr.Textbox(label="Ubicación Actual", value="Biblioteca Principal", interactive=False)
+                # UI de navegación y visualización de ruta
+                with gr.Row():
+                    up_button = gr.Button("⬆️ Subir")
+                    refresh_button = gr.Button("🔄 Refrescar")
+                current_path_display = gr.Textbox(label="Ubicación Actual", value="Biblioteca Principal", interactive=False)
 
-            # Lista de archivos y carpetas
-            library_browser = gr.Radio(label="Contenido", choices=[], interactive=True)
+                # Lista de archivos y carpetas
+                library_browser = gr.Radio(label="Contenido", choices=[], interactive=True)
 
-            # Reproductor de audio
-            selected_audio_player = gr.Audio(label="Audio Seleccionado", type="filepath")
+                # Reproductor de audio
+                selected_audio_player = gr.Audio(label="Audio Seleccionado", type="filepath")
 
-            # Acordeón para acciones de la biblioteca
-            with gr.Accordion("📂 Acciones de Biblioteca", open=False):
-                with gr.Blocks(elem_id="action-buttons"):
-                    # Crear carpetas
-                    with gr.Row():
-                        new_folder_name = gr.Textbox(label="Nombre de la Carpeta", placeholder="Escribe y presiona Enter...", scale=3)
-                        create_folder_button = gr.Button("➕ Crear", scale=1)
+                # Acordeón para acciones de la biblioteca
+                with gr.Accordion("📂 Acciones de Biblioteca", open=False):
+                    with gr.Blocks(elem_id="action-buttons"):
+                        # Crear carpetas
+                        with gr.Row():
+                            new_folder_name = gr.Textbox(label="Nombre de la Carpeta", placeholder="Escribe y presiona Enter...", scale=3)
+                            create_folder_button = gr.Button("➕ Crear", scale=1)
 
-                    # Renombrar items
-                    with gr.Row():
-                        new_name_input = gr.Textbox(label="Nuevo Nombre", placeholder="Nuevo nombre para el item...", scale=3)
-                        rename_button = gr.Button("✏️ Renombrar", scale=1)
+                        # Renombrar items
+                        with gr.Row():
+                            new_name_input = gr.Textbox(label="Nuevo Nombre", placeholder="Nuevo nombre para el item...", scale=3)
+                            rename_button = gr.Button("✏️ Renombrar", scale=1)
 
-                    # Eliminar
-                    delete_button = gr.Button("🗑️ Eliminar Seleccionado")
+                        # Eliminar
+                        delete_button = gr.Button("🗑️ Eliminar Seleccionado")
 
         with gr.Column():
             gr.Markdown("## 🎙️ Transcriptor con Diarización (Resemblyzer + DBSCAN)")
