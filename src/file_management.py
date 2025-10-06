@@ -18,7 +18,8 @@ def get_directory_contents(path="."):
     Prefija las carpetas con '[C]' para distinguirlas.
     """
     path = os.path.normpath(path)
-    if path.startswith("..") or os.path.isabs(path):
+    # Basic security check
+    if ".." in path.split(os.sep) or os.path.isabs(path):
         path = "."
 
     base_path = os.path.join(AUDIO_LIBRARY_PATH, path)
@@ -34,25 +35,17 @@ def get_directory_contents(path="."):
 
     return contents
 
-def update_library_browser(current_path="."):
-    """Actualiza el navegador de la biblioteca y la ruta visible."""
-    choices = get_directory_contents(current_path)
-    display_path = "Biblioteca Principal" if current_path == "." else current_path
-    return gr.update(choices=choices, value=None), gr.update(value=display_path)
-
 def create_folder_in_library(current_path, new_folder):
-    """Crea una nueva carpeta en la ruta actual."""
+    """Crea una nueva carpeta en la ruta actual y devuelve un mensaje de estado."""
     if not new_folder.strip() or ".." in new_folder or "/" in new_folder:
-        return "Nombre de carpeta inválido.", gr.update(), gr.update(), gr.update()
+        return "Nombre de carpeta inválido."
 
     folder_path = os.path.join(AUDIO_LIBRARY_PATH, current_path, new_folder)
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
-        status = f"Carpeta '{new_folder}' creada."
-        browser_update, path_update = update_library_browser(current_path)
-        return status, browser_update, path_update, gr.update(value="")
+        return f"Carpeta '{new_folder}' creada."
     else:
-        return f"La carpeta '{new_folder}' ya existe.", gr.update(), gr.update(), gr.update()
+        return f"La carpeta '{new_folder}' ya existe."
 
 def save_to_library(current_path, audio_path, transcription):
     """Guarda el audio y su transcripción en la ruta actual de la biblioteca."""
@@ -97,9 +90,9 @@ def save_to_library(current_path, audio_path, transcription):
 
 
 def rename_library_item(current_path, selection, new_name):
-    """Renombra un archivo o carpeta en la ruta actual."""
+    """Renombra un archivo o carpeta y devuelve un mensaje de estado."""
     if not selection or not new_name.strip():
-        return "Selecciona un item y proporciona un nuevo nombre.", gr.update(), gr.update(), gr.update()
+        return "Selecciona un item y proporciona un nuevo nombre."
 
     old_name = selection.replace("[C] ", "")
     new_name = new_name.strip()
@@ -107,9 +100,9 @@ def rename_library_item(current_path, selection, new_name):
     new_path_full = os.path.join(AUDIO_LIBRARY_PATH, current_path, new_name)
 
     if not os.path.exists(old_path_full):
-        return f"Error: El item '{old_name}' no existe.", gr.update(), gr.update(), gr.update()
+        return f"Error: El item '{old_name}' no existe."
     if os.path.exists(new_path_full):
-        return f"Error: Ya existe un item con el nombre '{new_name}'.", gr.update(), gr.update(), gr.update()
+        return f"Error: Ya existe un item con el nombre '{new_name}'."
 
     # Renombrar el archivo/carpeta físico
     os.rename(old_path_full, new_path_full)
@@ -128,7 +121,6 @@ def rename_library_item(current_path, selection, new_name):
     new_metadata_key_base = os.path.normpath(os.path.join(current_path, new_name))
 
     if os.path.isdir(new_path_full):  # Si es una carpeta
-        # Actualizar todas las claves que comiencen con la ruta de la carpeta antigua
         for key, value in metadata.items():
             if key.startswith(old_metadata_key_base + os.sep):
                 new_key = new_metadata_key_base + key[len(old_metadata_key_base):]
@@ -138,7 +130,6 @@ def rename_library_item(current_path, selection, new_name):
     else:  # Si es un archivo
         old_metadata_key = old_metadata_key_base
         new_metadata_key = new_metadata_key_base
-        # Añadir extensión .wav si no está presente en el nuevo nombre
         if not new_name.lower().endswith('.wav'):
              new_metadata_key += '.wav'
              os.rename(new_path_full, new_path_full + '.wav')
@@ -152,27 +143,25 @@ def rename_library_item(current_path, selection, new_name):
     with open(METADATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(new_metadata, f, indent=4, ensure_ascii=False)
 
-    return f"Item renombrado a '{new_name}'.", *update_library_browser(current_path), gr.update(value="")
+    return f"Item renombrado a '{new_name}'."
 
 
 def delete_from_library(current_path, selection):
-    """Elimina un archivo o carpeta de la ruta actual."""
+    """Elimina un archivo o carpeta y devuelve un mensaje de estado."""
     if not selection:
-        return "No se ha seleccionado ningún item.", gr.update(), gr.update(), gr.update(), gr.update()
+        return "No se ha seleccionado ningún item."
 
     item_name = selection.replace("[C] ", "")
     path_to_delete_full = os.path.join(AUDIO_LIBRARY_PATH, current_path, item_name)
 
     if not os.path.exists(path_to_delete_full):
-         return f"Error: El item '{item_name}' no existe.", gr.update(), gr.update(), gr.update(), gr.update()
+         return f"Error: El item '{item_name}' no existe."
 
-    # Eliminar archivo/carpeta físico
     if os.path.isdir(path_to_delete_full):
         shutil.rmtree(path_to_delete_full)
     else:
         os.remove(path_to_delete_full)
 
-    # Actualizar metadatos
     metadata = {}
     if os.path.exists(METADATA_FILE):
         with open(METADATA_FILE, 'r', encoding='utf-8') as f:
@@ -185,51 +174,31 @@ def delete_from_library(current_path, selection):
     metadata_key_to_delete = os.path.normpath(os.path.join(current_path, item_name))
 
     for key, value in metadata.items():
-        # No incluir la clave a eliminar ni ninguna clave dentro de la carpeta eliminada
         if not (key == metadata_key_to_delete or key.startswith(metadata_key_to_delete + os.sep)):
             new_metadata[key] = value
 
     with open(METADATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(new_metadata, f, indent=4, ensure_ascii=False)
 
-    return f"Item '{item_name}' eliminado.", *update_library_browser(current_path), gr.update(value=None), gr.update(value="")
+    return f"Item '{item_name}' eliminado."
 
-def handle_library_selection(selection, current_path):
+def get_file_data(current_path, selection):
     """
-    Gestiona la selección en la biblioteca.
-    Navega si es una carpeta, carga si es un archivo.
+    Obtiene la ruta y la transcripción de un archivo seleccionado.
     """
-    if selection is None:
-        # Esto ocurre tras una navegación o refresco, no hacer nada para no limpiar el reproductor.
-        return current_path, gr.update(), gr.update(), gr.update(), gr.update()
+    if selection is None or selection.startswith("[C]"):
+        return None, "Selecciona un archivo para ver su transcripción."
 
-    if selection.startswith("[C]"):
-        # Navegar a la carpeta
-        folder_name = selection.replace("[C] ", "")
-        new_path = os.path.join(current_path, folder_name)
-        browser_update, path_update = update_library_browser(new_path)
-        # Limpiar reproductor y texto al navegar
-        return new_path, None, "", browser_update, path_update
-    else:
-        # Cargar un archivo de audio
-        file_path_in_library = os.path.join(AUDIO_LIBRARY_PATH, current_path, selection)
-        metadata_key = os.path.normpath(os.path.join(current_path, selection))
+    file_path_in_library = os.path.join(AUDIO_LIBRARY_PATH, current_path, selection)
+    metadata_key = os.path.normpath(os.path.join(current_path, selection))
 
-        transcription = "Transcripción no encontrada."
-        if os.path.exists(METADATA_FILE):
-            with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-                try:
-                    metadata = json.load(f)
-                    transcription = metadata.get(metadata_key, {}).get("transcription", "Transcripción no encontrada.")
-                except json.JSONDecodeError:
-                    pass
+    transcription = "Transcripción no encontrada."
+    if os.path.exists(METADATA_FILE):
+        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
+            try:
+                metadata = json.load(f)
+                transcription = metadata.get(metadata_key, {}).get("transcription", "Transcripción no encontrada.")
+            except json.JSONDecodeError:
+                pass
 
-        # Actualizar solo el reproductor y la transcripción, sin refrescar el browser.
-        return current_path, file_path_in_library, transcription, gr.update(), gr.update()
-
-def navigate_up(current_path):
-    """Navega al directorio padre y actualiza el estado."""
-    new_path = "."
-    if current_path != ".":
-        new_path = os.path.dirname(current_path)
-    return new_path
+    return file_path_in_library, transcription

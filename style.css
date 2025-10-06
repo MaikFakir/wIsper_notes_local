@@ -1,39 +1,112 @@
-/* Estilos personalizados para la aplicación de Gradio */
-
-/* Ejemplo: Cambiar el color de fondo principal */
-.gradio-container {
-    background-color: #f0f2f5;
+/* --- GENERALES --- */
+.main-container {
+    background-color: #F8F9FA; /* Un fondo muy claro para el contenedor principal */
 }
 
-/* Estilo para los botones */
-.gr-button {
-    background-color: #007bff;
-    color: white;
+/* --- BARRA LATERAL --- */
+.sidebar {
+    background-color: #0d1117; /* Fondo oscuro como en la imagen */
+    color: #c9d1d9; /* Texto claro */
+    padding: 20px;
+    border-radius: 12px;
+    min-height: 100vh; /* Ocupa toda la altura */
+}
+
+.sidebar-title {
+    color: #ffffff;
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 20px;
+}
+
+/* Estilo para el campo de búsqueda de carpetas */
+.sidebar .gradio-textbox input {
+    background-color: #1c2128;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    border-radius: 6px;
+    padding: 10px;
+}
+
+/* Estilo para la lista de carpetas/archivos */
+.folder-list .gr-radio > label > div {
+    display: flex;
+    flex-direction: column;
+    gap: 8px; /* Espacio entre items */
+}
+
+.folder-list .gr-radio > label > div > div { /* Cada item */
+    padding: 10px 15px;
     border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    font-size: 16px;
+}
+
+.folder-list .gr-radio > label > div > div:hover {
+    background-color: #1c2128;
+}
+
+.folder-list .gr-radio > label > div > input:checked + div {
+    background-color: #238636; /* Verde para el item seleccionado */
+    color: white;
     font-weight: bold;
 }
 
-.gr-button:hover {
-    background-color: #0056b3;
+/* Botón y campo para "Nueva Carpeta" */
+.sidebar .gr-button {
+    background-color: #238636;
+    color: white;
+    font-weight: bold;
+    border-radius: 6px;
+}
+.sidebar .gr-button:hover {
+    background-color: #2ea043;
 }
 
-/* Agrupación de botones de acción */
-#action-buttons {
-    border: 1px solid #e0e0e0;
-    padding: 10px;
+
+/* --- CONTENIDO PRINCIPAL --- */
+.main-content {
+    padding: 20px 40px;
+}
+
+.main-title {
+    font-size: 32px;
+    font-weight: bold;
+    color: #1f2328;
+}
+
+/* Botones de acción principales */
+.main-content .gr-button {
+    background-color: #0969da;
+    color: white;
+    padding: 12px 20px;
+    font-size: 16px;
     border-radius: 8px;
+}
+.main-content .gr-button:hover {
+    background-color: #0c84fa;
+}
+
+/* Caja de entrada de audio */
+.audio-input-box {
+    border: 2px dashed #d0d7de;
+    border-radius: 10px;
+    padding: 40px;
+    text-align: center;
     background-color: #ffffff;
 }
 
-/* Estilo para la lista de la biblioteca */
-.gr-radio > label > div {
-    display: flex;
-    flex-direction: column;
+/* Caja de transcripción */
+.transcription-box textarea {
+    background-color: #f6f8fa;
+    border-radius: 8px;
+    padding: 15px;
+    font-size: 16px;
+    line-height: 1.6;
 }
 
-/* Contenedor para la barra lateral que permite el desplazamiento */
-.sidebar-wrapper {
-    height: 100%;
-    overflow-y: auto;
-    padding-right: 15px; /* Espacio para la barra de desplazamiento */
+/* Ocultar etiquetas de radio y textbox si no se necesitan */
+.hide-label > .label {
+    display: none;
 }
