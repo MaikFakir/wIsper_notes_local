@@ -9,6 +9,8 @@ import numpy as np
 import librosa
 from sklearn.cluster import DBSCAN
 import torch
+from langchain_experimental.text_splitter import SemanticChunker
+from langchain.embeddings import HuggingFaceEmbeddings
 
 # --- 2. UTILIDADES DE AUDIO ---
 
@@ -52,6 +54,14 @@ print("Modelo de transcripción cargado.")
 print("Cargando modelo de codificación de voz...")
 voice_encoder = VoiceEncoder(device="cpu")
 print("Modelo de codificación de voz cargado.")
+
+# Cargar modelo de embeddings para el chunker semántico
+print("Cargando modelo de embeddings...")
+# Usar un modelo más ligero para reducir el consumo de memoria
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+print("Modelo de embeddings cargado.")
+text_splitter = SemanticChunker(embeddings)
+
 
 # --- 4. FUNCIÓN PRINCIPAL DE PROCESAMIENTO ---
 
@@ -133,20 +143,28 @@ def transcribir_con_diarizacion(audio_path):
                 "start": segment.start
             })
 
-        # Agrupar texto por hablante
+        # Agrupar texto por hablante y aplicar chunking semántico
         grouped_transcription = ""
         if final_transcription:
-            current_speaker = final_transcription[0]['speaker']
-            current_text = ""
+            # Primero, agrupar todo el texto de cada hablante
+            speaker_texts = {}
             for item in final_transcription:
-                if item['speaker'] != current_speaker:
-                    grouped_transcription += f"**{current_speaker}:** {current_text.strip()}\\n\\n"
-                    current_speaker = item['speaker']
-                    current_text = item['text']
-                else:
-                    current_text += " " + item['text']
-            # Añadir el último bloque
-            grouped_transcription += f"**{current_speaker}:** {current_text.strip()}\\n\\n"
+                speaker = item['speaker']
+                if speaker not in speaker_texts:
+                    speaker_texts[speaker] = []
+                speaker_texts[speaker].append(item['text'])
+
+            # Ahora, procesar cada hablante
+            for speaker, texts in speaker_texts.items():
+                full_text = " ".join(texts)
+
+                # Aplicar el chunker semántico para obtener párrafos
+                docs = text_splitter.create_documents([full_text])
+
+                # Formatear la salida con los párrafos separados
+                formatted_paragraphs = "\n\n".join([doc.page_content for doc in docs])
+
+                grouped_transcription += f"**{speaker}:**\n{formatted_paragraphs}\n\n"
 
         print("Proceso completado.")
         return grouped_transcription.strip(), audio_path

@@ -6,3 +6,6 @@ ffmpeg-python
 scikit-learn
 torch
 numpy
+langchain_experimental
+langchain
+sentence-transformers
