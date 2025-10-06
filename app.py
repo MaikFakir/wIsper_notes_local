@@ -1,128 +1,169 @@
 import gradio as gr
 import os
-from src.audio_processing import transcribir_con_diarizacion
+from src.audio_processing import transcribe_audio
 from src.file_management import (
     AUDIO_LIBRARY_PATH,
-    update_library_browser,
+    METADATA_FILE,
+    get_directory_contents,
     create_folder_in_library,
     save_to_library,
-    rename_library_item,
-    delete_from_library,
-    handle_library_selection,
-    navigate_up
+    get_file_data,
 )
+import json
+
+# --- UI WRAPPER FUNCTIONS ---
+
+def update_browser_and_title(current_path="."):
+    """
+    Controller function to get directory contents from the backend
+    and return formatted updates for the UI components.
+    """
+    choices = get_directory_contents(current_path)
+
+    # Determine the display name for the title
+    if current_path == ".":
+        display_path = "Reuniones de trabajo"
+    else:
+        display_path = os.path.basename(current_path)
+
+    title_update = f"## {display_path}"
+    browser_update = gr.update(choices=choices, value=None)
+
+    return browser_update, title_update
+
+def create_folder_and_refresh(current_path, new_folder_name):
+    """
+    UI controller to create a folder and then refresh the file browser.
+    """
+    # Call the backend function which returns a status message
+    status = create_folder_in_library(current_path, new_folder_name)
+
+    # After the backend action, get fresh updates for the UI
+    browser_update, title_update = update_browser_and_title(current_path)
+
+    # Return all the necessary updates for the Gradio interface
+    return status, browser_update, title_update, "" # Clear the input textbox
+
+def handle_selection_and_refresh(selection, current_path):
+    """
+    UI controller to handle file/folder selection. It navigates into
+    folders or loads file data and returns the correct UI updates.
+    """
+    if selection is None:
+        # This can happen on a refresh, just update the current view
+        browser_update, title_update = update_browser_and_title(current_path)
+        return current_path, gr.update(), gr.update(), browser_update, title_update
+
+    if selection.startswith("[C]"):
+        # A folder was selected, so navigate into it
+        folder_name = selection.replace("[C] ", "")
+        new_path = os.path.join(current_path, folder_name)
+        browser_update, title_update = update_browser_and_title(new_path)
+        # Return new path, clear audio player and textbox, update browser and title
+        return new_path, None, "", browser_update, title_update
+    else:
+        # A file was selected
+        # Call the backend to get the file's data
+        audio_path, transcription = get_file_data(current_path, selection)
+        # We don't need to change the path or the browser list, so we send gr.update()
+        return current_path, audio_path, transcription, gr.update(), gr.update()
 
 # --- INTERFAZ DE GRADIO ---
 
 with gr.Blocks(theme=gr.themes.Soft(), css="style.css") as demo:
-    # Estado para almacenar la ruta del último audio procesado
+    # --- STATE MANAGEMENT ---
     processed_audio_path_state = gr.State(value=None)
+    current_path_state = gr.State(value=".")
 
-    with gr.Row():
-        with gr.Sidebar():
-            with gr.Group(elem_classes="sidebar-wrapper"):
-                gr.Markdown("## 📚 Biblioteca de Audios")
+    with gr.Row(elem_classes="main-container"):
+        # --- SIDEBAR ---
+        with gr.Column(scale=1, elem_classes="sidebar"):
+            gr.Markdown("### Mis Carpetas", elem_classes="sidebar-title")
+            folder_search = gr.Textbox(placeholder="🔍 Buscar carpeta...", show_label=False)
 
-                # Estado para la ruta actual en la biblioteca
-                current_path_state = gr.State(value=".")
+            library_browser = gr.Dropdown(
+                label="Contenido",
+                choices=[],
+                interactive=True,
+                show_label=False,
+                elem_classes="folder-list"
+            )
 
-                # UI de navegación y visualización de ruta
-                with gr.Row():
-                    up_button = gr.Button("⬆️ Subir")
-                    refresh_button = gr.Button("🔄 Refrescar")
-                current_path_display = gr.Textbox(label="Ubicación Actual", value="Biblioteca Principal", interactive=False)
+            new_folder_button = gr.Button("➕ Nueva Carpeta", elem_id="new-folder-button")
+            new_folder_name = gr.Textbox(
+                placeholder="Nombre de la carpeta...",
+                show_label=False,
+                visible=False # Initially hidden
+            )
 
-                # Lista de archivos y carpetas
-                library_browser = gr.Radio(label="Contenido", choices=[], interactive=True)
-
-                # Reproductor de audio
-                selected_audio_player = gr.Audio(label="Audio Seleccionado", type="filepath")
-
-                # Acordeón para acciones de la biblioteca
-                with gr.Accordion("📂 Acciones de Biblioteca", open=False):
-                    with gr.Blocks(elem_id="action-buttons"):
-                        # Crear carpetas
-                        with gr.Row():
-                            new_folder_name = gr.Textbox(label="Nombre de la Carpeta", placeholder="Escribe y presiona Enter...", scale=3)
-                            create_folder_button = gr.Button("➕ Crear", scale=1)
-
-                        # Renombrar items
-                        with gr.Row():
-                            new_name_input = gr.Textbox(label="Nuevo Nombre", placeholder="Nuevo nombre para el item...", scale=3)
-                            rename_button = gr.Button("✏️ Renombrar", scale=1)
-
-                        # Eliminar
-                        delete_button = gr.Button("🗑️ Eliminar Seleccionado")
-
-        with gr.Column():
-            gr.Markdown("## 🎙️ Transcriptor con Diarización (Resemblyzer + DBSCAN)")
-            gr.Markdown("Graba una conversación. El sistema transcribirá y agrupará los segmentos por hablante.")
-
-            audio_input = gr.Audio(sources=["microphone", "upload"], type="filepath", label="🎤 Graba o sube tu audio aquí")
-            text_box = gr.Textbox(label="📝 Transcripción", lines=15, interactive=False)
+        # --- MAIN CONTENT ---
+        with gr.Column(scale=4, elem_classes="main-content"):
+            main_title = gr.Markdown("## Reuniones de trabajo", elem_classes="main-title")
 
             with gr.Row():
-                save_button = gr.Button("💾 Guardar en la Biblioteca")
+                record_button = gr.Button("🎤 Grabar Audio")
+                transcribe_button = gr.Button("✍️ Transcribir Audio")
 
-            status_box = gr.Textbox(label="ℹ️ Estado", lines=1, interactive=False)
+            with gr.Tabs():
+                with gr.TabItem("Cargar o Grabar Audio"):
+                    audio_input = gr.Audio(
+                        sources=["microphone", "upload"],
+                        type="filepath",
+                        label="Coloque el audio aquí o haga clic para cargar",
+                        elem_classes="audio-input-box"
+                    )
 
-    # --- Lógica de la Interfaz ---
+            transcription_output = gr.Textbox(
+                label="Transcripción",
+                lines=10,
+                interactive=False,
+                elem_classes="transcription-box"
+            )
 
-    # Cargar el contenido inicial de la biblioteca
-    demo.load(update_library_browser, outputs=[library_browser, current_path_display])
+            status_box = gr.Textbox(label="ℹ️ Estado", lines=1, interactive=False, visible=False)
 
-    # Conexiones de eventos de la transcripción principal
-    audio_input.change(transcribir_con_diarizacion, inputs=audio_input, outputs=[text_box, processed_audio_path_state])
-    save_button.click(
-        save_to_library,
-        inputs=[current_path_state, processed_audio_path_state, text_box],
-        outputs=[status_box]
-    ).then(
-        update_library_browser,
-        inputs=[current_path_state],
-        outputs=[library_browser, current_path_display]
+    # --- UI LOGIC AND EVENT HANDLERS ---
+
+    def initial_load(current_path):
+        return update_browser_and_title(current_path)
+
+    demo.load(initial_load, inputs=current_path_state, outputs=[library_browser, main_title])
+
+    def toggle_new_folder_input(current_state):
+        return gr.update(visible=not current_state)
+
+    new_folder_button.click(
+        toggle_new_folder_input,
+        inputs=new_folder_name.visible,
+        outputs=new_folder_name
     )
 
-    # Conexiones de la biblioteca
-    create_folder_button.click(
-        create_folder_in_library,
+    new_folder_name.submit(
+        create_folder_and_refresh,
         inputs=[current_path_state, new_folder_name],
-        outputs=[status_box, library_browser, current_path_display, new_folder_name]
-    )
-
-    up_button.click(
-        navigate_up,
-        inputs=[current_path_state],
-        outputs=[current_path_state]
+        outputs=[status_box, library_browser, main_title, new_folder_name]
     ).then(
-        update_library_browser,
-        inputs=[current_path_state],
-        outputs=[library_browser, current_path_display]
+        lambda: gr.update(visible=False),
+        outputs=new_folder_name
     )
-
-    refresh_button.click(update_library_browser, inputs=[current_path_state], outputs=[library_browser, current_path_display])
 
     library_browser.change(
-        handle_library_selection,
+        handle_selection_and_refresh,
         inputs=[library_browser, current_path_state],
-        outputs=[current_path_state, selected_audio_player, text_box, library_browser, current_path_display]
+        outputs=[current_path_state, audio_input, transcription_output, library_browser, main_title]
     )
 
-    rename_button.click(
-        rename_library_item,
-        inputs=[current_path_state, library_browser, new_name_input],
-        outputs=[status_box, library_browser, current_path_display, new_name_input]
+    transcribe_button.click(
+        transcribe_audio,
+        inputs=audio_input,
+        outputs=[transcription_output, processed_audio_path_state]
     )
-
-    delete_button.click(
-        delete_from_library,
-        inputs=[current_path_state, library_browser],
-        outputs=[status_box, library_browser, current_path_display, selected_audio_player, text_box]
-    )
-
 
 if __name__ == "__main__":
-    # Crear el directorio de la biblioteca si no existe
     if not os.path.exists(AUDIO_LIBRARY_PATH):
         os.makedirs(AUDIO_LIBRARY_PATH)
+    if not os.path.exists(METADATA_FILE):
+        with open(METADATA_FILE, 'w') as f:
+            json.dump({}, f)
+
     demo.launch(share=True, debug=True)
