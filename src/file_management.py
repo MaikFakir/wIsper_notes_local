@@ -7,7 +7,10 @@ import soundfile as sf
 import gradio as gr
 
 # --- CONSTANTES ---
-AUDIO_LIBRARY_PATH = "audio_library"
+# Define paths relative to this file's location to make them absolute and robust.
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_CURRENT_DIR)  # Assumes src/ is one level down from root
+AUDIO_LIBRARY_PATH = os.path.join(_PROJECT_ROOT, "audio_library")
 METADATA_FILE = os.path.join(AUDIO_LIBRARY_PATH, "metadata.json")
 
 # --- FUNCIONES DE GESTIÓN DE LA BIBLIOTECA ---
@@ -34,18 +37,6 @@ def get_directory_contents(path="."):
             contents.append(item)
 
     return contents
-
-def create_folder_in_library(current_path, new_folder):
-    """Crea una nueva carpeta en la ruta actual y devuelve un mensaje de estado."""
-    if not new_folder.strip() or ".." in new_folder or "/" in new_folder:
-        return "Nombre de carpeta inválido."
-
-    folder_path = os.path.join(AUDIO_LIBRARY_PATH, current_path, new_folder)
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
-        return f"Carpeta '{new_folder}' creada."
-    else:
-        return f"La carpeta '{new_folder}' ya existe."
 
 def save_to_library(current_path, audio_path, transcription):
     """Guarda el audio y su transcripción en la ruta actual de la biblioteca."""

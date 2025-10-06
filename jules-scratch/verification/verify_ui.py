@@ -11,11 +11,21 @@ def run_verification():
         # Wait for the main title to be visible to ensure the page has loaded
         expect(page.get_by_role("heading", name="Reuniones de trabajo")).to_be_visible(timeout=10000)
 
-        # Wait for the sidebar to load its content
-        expect(page.locator(".folder-list")).to_contain_text("Contenido", timeout=5000)
+        # Find the "Nueva Carpeta" button and the input field
+        new_folder_button = page.get_by_role("button", name="➕ Nueva Carpeta")
+        new_folder_input = page.get_by_placeholder("Nombre de la carpeta...")
 
-        # Take a screenshot of the entire page
-        page.screenshot(path="jules-scratch/verification/verification.png")
+        # Initially, the input field should not be visible
+        expect(new_folder_input).not_to_be_visible()
+
+        # Click the button to reveal the input field
+        new_folder_button.click()
+
+        # Now, the input field should be visible
+        expect(new_folder_input).to_be_visible()
+
+        # Take a screenshot of the page with the visible input field
+        page.screenshot(path="jules-scratch/verification/verification_fix.png")
 
         browser.close()
 
