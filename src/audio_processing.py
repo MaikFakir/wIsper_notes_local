@@ -1,181 +1,88 @@
-# --- 1. INSTALACIONES E IMPORTACIONES ---
-import ffmpeg
-import tempfile
 import os
-from faster_whisper import WhisperModel
-import gradio as gr
-from resemblyzer import VoiceEncoder
-import numpy as np
-import librosa
-from sklearn.cluster import DBSCAN
+import tempfile
+import traceback
+import ffmpeg
 import torch
-from langchain_experimental.text_splitter import SemanticChunker
-from langchain.embeddings import HuggingFaceEmbeddings
+from faster_whisper import WhisperModel
 
-# --- 2. UTILIDADES DE AUDIO ---
+# --- 1. MODEL MANAGEMENT (LAZY LOADING) ---
 
-def convert_audio_to_wav(audio_path):
+class ModelContainer:
+    """A simple container to ensure the transcription model is loaded only once."""
+    def __init__(self):
+        self.transcription_model = None
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.compute_type = "float16" if torch.cuda.is_available() else "int8"
+
+    def load_model(self):
+        if self.transcription_model is None:
+            print("Loading transcription model (faster-whisper)...")
+            try:
+                self.transcription_model = WhisperModel("base", device=self.device, compute_type=self.compute_type)
+                print("Transcription model loaded successfully.")
+            except Exception as e:
+                print(f"FATAL: Error loading transcription model: {e}")
+                raise
+        return self.transcription_model
+
+MODELS = ModelContainer()
+
+# --- 2. AUDIO PROCESSING UTILITIES ---
+
+def _convert_audio_to_wav(input_path):
     """
-    Convierte un archivo de audio a formato WAV a 16kHz, mono.
-    Devuelve la ruta del archivo temporal convertido.
+    Converts any audio file to a temporary 16kHz mono WAV file for processing.
     """
+    temp_wav = None
     try:
-        # Crea un archivo temporal con la extensión .wav
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
-            temp_filename = temp_file.name
+            temp_wav = temp_file.name
 
-        # Usa ffmpeg para la conversión
         (
-            ffmpeg
-            .input(audio_path)
-            .output(temp_filename, acodec='pcm_s16le', ac=1, ar='16k')
+            ffmpeg.input(input_path)
+            .output(temp_wav, acodec='pcm_s16le', ac=1, ar='16k')
             .run(overwrite_output=True, quiet=True)
         )
-        return temp_filename
-    except ffmpeg.Error as e:
-        print(f"Error de ffmpeg: {e.stderr.decode()}")
-        raise
+        return temp_wav
     except Exception as e:
-        print(f"Error inesperado en la conversión de audio: {e}")
+        print(f"Error during audio conversion: {e}")
+        if temp_wav and os.path.exists(temp_wav):
+            os.remove(temp_wav)
         raise
 
-# --- 3. CARGA DE MODELOS ---
+# --- 3. CORE TRANSCRIPTION LOGIC ---
 
-# Determina el dispositivo a usar
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-COMPUTE_TYPE = "float16" if torch.cuda.is_available() else "int8"
-
-# Cargar modelo Whisper. 'base' es un buen equilibrio entre velocidad y precisión para timestamps.
-print("Cargando modelo de transcripción...")
-transcription_model = WhisperModel("base", device=DEVICE, compute_type=COMPUTE_TYPE)
-print("Modelo de transcripción cargado.")
-
-# Cargar encoder de voces. Es recomendable usar CPU para evitar conflictos de VRAM.
-print("Cargando modelo de codificación de voz...")
-voice_encoder = VoiceEncoder(device="cpu")
-print("Modelo de codificación de voz cargado.")
-
-# Cargar modelo de embeddings para el chunker semántico
-print("Cargando modelo de embeddings...")
-# Usar un modelo más ligero para reducir el consumo de memoria
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-print("Modelo de embeddings cargado.")
-text_splitter = SemanticChunker(embeddings)
-
-
-# --- 4. FUNCIÓN PRINCIPAL DE PROCESAMIENTO ---
-
-def transcribir_con_diarizacion(audio_path):
+def transcribe_audio(audio_path):
     """
-    Transcribe un archivo de audio, realiza diarización de hablantes y optimiza
-    el uso de memoria para archivos grandes.
+    Transcribes an audio file into plain text. Diarization has been removed for stability.
     """
-    if audio_path is None:
-        return "No se recibió audio. Por favor, graba algo.", None
+    if not audio_path or not os.path.exists(audio_path):
+        return "Error: Audio file path is missing or invalid."
 
     temp_wav_path = None
     try:
-        # 1️⃣ Convertir a WAV estándar para compatibilidad y eficiencia
-        print("Convirtiendo audio a formato WAV...")
-        temp_wav_path = convert_audio_to_wav(audio_path)
-        print(f"Audio convertido y guardado en: {temp_wav_path}")
+        # Step 1: Ensure the model is ready
+        transcription_model = MODELS.load_model()
 
-        # 2️⃣ Transcripción directa desde el archivo
-        print("Iniciando transcripción...")
-        segments_generator, info = transcription_model.transcribe(
-            temp_wav_path, language="es", word_timestamps=True
-        )
-        segments = list(segments_generator)
-        print("Transcripción completada.")
+        # Step 2: Convert audio to a standard format
+        temp_wav_path = _convert_audio_to_wav(audio_path)
 
-        if not segments:
-            return "No se pudo transcribir el audio (posiblemente silencio).", audio_path
+        # Step 3: Transcribe audio to get segments
+        print(f"Starting transcription for {audio_path}...")
+        segments_gen, _ = transcription_model.transcribe(temp_wav_path, language="es")
 
-        # 3️⃣ Diarización optimizada (cargando solo los segmentos necesarios)
-        print("Iniciando diarización...")
-        embeddings = []
-        valid_segments_for_diarization = []
-        for segment in segments:
-            # Cargar solo el audio necesario para el embedding
-            try:
-                segment_audio, sr = librosa.load(
-                    temp_wav_path,
-                    sr=16000,
-                    offset=segment.start,
-                    duration=(segment.end - segment.start)
-                )
-                if len(segment_audio) < 400:  # Mínimo para el encoder
-                    continue
+        # Step 4: Concatenate segments into a single text block
+        full_transcription = " ".join(segment.text.strip() for segment in segments_gen)
 
-                embedding = voice_encoder.embed_utterance(segment_audio)
-                embeddings.append(embedding)
-                valid_segments_for_diarization.append(segment)
-            except Exception as e:
-                print(f"Error procesando segmento de {segment.start} a {segment.end}: {e}")
+        print(f"Transcription for {audio_path} complete.")
+        return full_transcription
 
-        if not valid_segments_for_diarization:
-             # Si la diarización falla, devolver solo la transcripción
-            return " ".join([s.text for s in segments]).strip(), audio_path
-
-
-        # 4️⃣ Clustering de hablantes
-        print("Clustering de hablantes...")
-        embeddings_array = np.array(embeddings)
-        clustering = DBSCAN(eps=0.5, min_samples=1, metric="cosine").fit(embeddings_array)
-        labels = clustering.labels_
-
-        # Asignar hablante a cada segmento original usando una clave inmutable
-        diarization_results = {}
-        for i, segment in enumerate(valid_segments_for_diarization):
-            key = (segment.start, segment.end)
-            diarization_results[key] = labels[i]
-
-        # 5️⃣ Construir la transcripción final formateada
-        print("Construyendo transcripción final...")
-        final_transcription = []
-        for segment in segments:
-            key = (segment.start, segment.end)
-            speaker_label = diarization_results.get(key, -1) # Usar -1 si no fue diarizado
-            speaker_name = f"Hablante {speaker_label + 1}" if speaker_label != -1 else "Desconocido"
-            final_transcription.append({
-                "speaker": speaker_name,
-                "text": segment.text.strip(),
-                "start": segment.start
-            })
-
-        # Agrupar texto por hablante y aplicar chunking semántico
-        grouped_transcription = ""
-        if final_transcription:
-            # Primero, agrupar todo el texto de cada hablante
-            speaker_texts = {}
-            for item in final_transcription:
-                speaker = item['speaker']
-                if speaker not in speaker_texts:
-                    speaker_texts[speaker] = []
-                speaker_texts[speaker].append(item['text'])
-
-            # Ahora, procesar cada hablante
-            for speaker, texts in speaker_texts.items():
-                full_text = " ".join(texts)
-
-                # Aplicar el chunker semántico para obtener párrafos
-                docs = text_splitter.create_documents([full_text])
-
-                # Formatear la salida con los párrafos separados
-                formatted_paragraphs = "\n\n".join([doc.page_content for doc in docs])
-
-                grouped_transcription += f"**{speaker}:**\n{formatted_paragraphs}\n\n"
-
-        print("Proceso completado.")
-        return grouped_transcription.strip(), audio_path
-
-    except ffmpeg.Error as e:
-        return f"Error de FFMPEG: {e.stderr.decode()}", None
     except Exception as e:
-        import traceback
-        return f"Ocurrió un error inesperado: {e}\\n{traceback.format_exc()}", None
+        print(f"An unexpected error occurred during transcription: {e}")
+        traceback.print_exc()
+        return f"Error during transcription: {e}"
     finally:
-        # 6️⃣ Limpieza del archivo temporal
+        # Clean up the temporary WAV file
         if temp_wav_path and os.path.exists(temp_wav_path):
             os.remove(temp_wav_path)
-            print(f"Archivo temporal eliminado: {temp_wav_path}")
+            print(f"Temporary file {temp_wav_path} removed.")
