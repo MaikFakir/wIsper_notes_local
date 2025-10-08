@@ -12,112 +12,121 @@
             <div class="logo">
                 <h1>AudioTranscribe</h1>
             </div>
-            <nav class="navigation">
-                <ul>
-                    <li><a href="#" class="active">My Recordings</a></li>
-                    <li><a href="#">Meeting Notes</a></li>
-                    <li><a href="#">Interviews</a></li>
-                    <li><a href="#">Lectures</a></li>
-                    <li><a href="#">All Recordings</a></li>
-                    <li><a href="#">Trash</a></li>
-                </ul>
-            </nav>
-            <button class="new-recording-btn">+ New Recording</button>
+            <div id="folder-tree" class="navigation">
+                <!-- Folder tree will be dynamically inserted here -->
+            </div>
         </aside>
         <main class="main-content">
-            <header class="main-header">
-                <h2>My Recordings</h2>
-                <div class="header-actions">
-                    <button class="upload-btn">↑ Upload Audio</button>
-                    <div class="user-profile">
-                        <img src="https://via.placeholder.com/40" alt="User Avatar">
+            <!-- Main File Browser View -->
+            <div id="file-browser-view">
+                <header class="main-header">
+                    <h2 id="current-folder-title">My Recordings</h2>
+                    <div class="header-actions">
+                        <button class="new-recording-btn">+ New Recording</button>
+                        <button class="upload-btn">↑ Upload Audio</button>
+                        <div class="user-profile">
+                            <img src="https://via.placeholder.com/40" alt="User Avatar">
+                        </div>
+                    </div>
+                </header>
+                <div class="toolbar">
+                    <input type="text" placeholder="Search by name" class="search-bar">
+                    <div class="sort-filter">
+                        <span>Sort by Date</span>
+                        <span>Filter by Status</span>
                     </div>
                 </div>
-            </header>
-            <div class="toolbar">
-                <input type="text" placeholder="Search by name" class="search-bar">
-                <div class="sort-filter">
-                    <span>Sort by Date</span>
-                    <span>Filter by Status</span>
+                <div class="recordings-list">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>File Name</th>
+                                <th>Duration</th>
+                                <th>Date Created</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- File and folder rows will be dynamically inserted here -->
+                        </tbody>
+                    </table>
                 </div>
             </div>
-            <div class="recordings-list">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>File Name</th>
-                            <th>Duration</th>
-                            <th>Date Created</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>Meeting_Notes_2024-07-26.mp3</td>
-                            <td>15:32</td>
-                            <td>July 26, 2024</td>
-                            <td><span class="status completed">Completed</span></td>
-                            <td class="actions">
-                                <button>▶</button>
-                                <button>🗑️</button>
-                                <button>📋</button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>Interview_with_Jane_Doe.wav</td>
-                            <td>45:12</td>
-                            <td>July 25, 2024</td>
-                            <td><span class="status processing">Processing</span></td>
-                            <td class="actions">
-                                <button>▶</button>
-                                <button>🗑️</button>
-                                <button>📋</button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>Lecture_on_AI_Ethics.m4a</td>
-                            <td>01:22:45</td>
-                            <td>July 24, 2024</td>
-                            <td><span class="status failed">Failed</span></td>
-                            <td class="actions">
-                                <button>▶</button>
-                                <button>🗑️</button>
-                                <button>📋</button>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+
+            <!-- Detail View (Initially Hidden) -->
+            <div id="detail-view" style="display: none;">
+                 <header class="main-header">
+                    <button id="back-to-browser-btn">← Back</button>
+                    <h2 id="detail-file-name"></h2>
+                </header>
+                <div class="detail-content">
+                    <div id="spectrogram-container">
+                        <!-- Spectrogram will be loaded here -->
+                        <p>Spectrogram loading...</p>
+                    </div>
+                    <div id="transcription-container">
+                        <h3>Transcription</h3>
+                        <p id="transcription-text">
+                            Transcription not available or still processing.
+                        </p>
+                    </div>
+                </div>
             </div>
         </main>
-        <aside class="right-sidebar">
-            <h3>Transcription Model</h3>
-            <p>Select the model to use for your new recordings.</p>
+    </div>
+    <input type="file" id="audio-upload-input" hidden accept="audio/*">
+
+    <!-- Modals -->
+    <div id="rename-modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2>Rename Item</h2>
+            <p>Enter a new name for <strong id="rename-item-name"></strong>:</p>
+            <input type="text" id="rename-input" placeholder="New name...">
+            <button id="rename-confirm-btn">Rename</button>
+        </div>
+    </div>
+
+    <div id="move-modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2>Move Item</h2>
+            <p>Select a new folder for <strong id="move-item-name"></strong>:</p>
+            <div id="move-folder-tree">
+                <!-- Dynamic folder tree for move destination -->
+            </div>
+            <button id="move-confirm-btn" disabled>Move Here</button>
+        </div>
+    </div>
+
+    <div id="model-selection-modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2 id="model-modal-title">Select Transcription Model</h2>
+            <p id="model-modal-description">Choose the model for your transcription.</p>
             <div class="model-selection">
-                <div class="model-option active">
+                 <div class="model-option" data-model="tiny">
                     <h5>tiny</h5>
                     <p>Fastest, for testing.</p>
                 </div>
-                <div class="model-option">
+                <div class="model-option active" data-model="base">
                     <h5>base</h5>
                     <p>Good balance.</p>
                 </div>
-                <div class="model-option">
+                <div class="model-option" data-model="small">
                     <h5>small</h5>
                     <p>More accurate.</p>
                 </div>
-                <div class="model-option">
+                <div class="model-option" data-model="medium">
                     <h5>medium</h5>
                     <p>High accuracy.</p>
                 </div>
-                <div class="model-option">
-                    <h5>large</h5>
-                    <p>Highest accuracy.</p>
-                </div>
             </div>
-        </aside>
+            <button id="model-confirm-btn">Start</button>
+        </div>
     </div>
-    <input type="file" id="audio-upload-input" hidden accept="audio/*">
+
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

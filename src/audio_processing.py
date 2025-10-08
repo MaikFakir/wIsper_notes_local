@@ -8,22 +8,25 @@ from faster_whisper import WhisperModel
 # --- 1. MODEL MANAGEMENT (LAZY LOADING) ---
 
 class ModelContainer:
-    """A simple container to ensure the transcription model is loaded only once."""
+    """A container to manage multiple transcription models, loading them lazily."""
     def __init__(self):
-        self.transcription_model = None
+        self._models = {}
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.compute_type = "float16" if torch.cuda.is_available() else "int8"
 
-    def load_model(self):
-        if self.transcription_model is None:
-            print("Loading transcription model (faster-whisper)...")
+    def load_model(self, model_name="base"):
+        """Loads a model by name. If already loaded, returns the existing instance."""
+        if model_name not in self._models:
+            print(f"Loading transcription model (faster-whisper: {model_name})...")
             try:
-                self.transcription_model = WhisperModel("base", device=self.device, compute_type=self.compute_type)
-                print("Transcription model loaded successfully.")
+                model = WhisperModel(model_name, device=self.device, compute_type=self.compute_type)
+                self._models[model_name] = model
+                print(f"Model '{model_name}' loaded successfully.")
             except Exception as e:
-                print(f"FATAL: Error loading transcription model: {e}")
-                raise
-        return self.transcription_model
+                print(f"FATAL: Error loading transcription model '{model_name}': {e}")
+                # Don't raise here, allow fallback or error handling downstream
+                return None
+        return self._models.get(model_name)
 
 MODELS = ModelContainer()
 
@@ -52,17 +55,19 @@ def _convert_audio_to_wav(input_path):
 
 # --- 3. CORE TRANSCRIPTION LOGIC ---
 
-def transcribe_audio(audio_path):
+def transcribe_audio(audio_path, model_name="base"):
     """
-    Transcribes an audio file into plain text. Diarization has been removed for stability.
+    Transcribes an audio file into plain text using a specified model.
     """
     if not audio_path or not os.path.exists(audio_path):
         return "Error: Audio file path is missing or invalid."
 
     temp_wav_path = None
     try:
-        # Step 1: Ensure the model is ready
-        transcription_model = MODELS.load_model()
+        # Step 1: Ensure the requested model is ready
+        transcription_model = MODELS.load_model(model_name)
+        if not transcription_model:
+            return f"Error: Could not load transcription model '{model_name}'."
 
         # Step 2: Convert audio to a standard format
         temp_wav_path = _convert_audio_to_wav(audio_path)

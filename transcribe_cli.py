@@ -1,25 +1,25 @@
 import sys
 import os
+import argparse
 from src.audio_processing import transcribe_audio
 
 def main():
     """
     Command-line interface for transcribing a single audio file.
-    Takes a file path as its only argument and prints the transcription result.
     """
-    if len(sys.argv) != 2:
-        print("Usage: python transcribe_cli.py <path_to_audio_file>", file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Transcribe a single audio file.")
+    parser.add_argument("audio_path", help="The full path to the audio file.")
+    parser.add_argument("--model", default="base", help="The transcription model to use (e.g., 'tiny', 'base', 'small').")
 
-    audio_path = sys.argv[1]
+    args = parser.parse_args()
 
-    if not os.path.exists(audio_path):
-        print(f"Error: File not found at '{audio_path}'", file=sys.stderr)
+    if not os.path.exists(args.audio_path):
+        print(f"Error: File not found at '{args.audio_path}'", file=sys.stderr)
         sys.exit(1)
 
     try:
-        # Call the simplified transcription function
-        transcription = transcribe_audio(audio_path)
+        # Call the transcription function with the specified model
+        transcription = transcribe_audio(args.audio_path, model_name=args.model)
         # Print the result to standard output
         print(transcription)
     except Exception as e:
