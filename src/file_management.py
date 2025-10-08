@@ -66,7 +66,7 @@ def list_library_contents():
                     duration_formatted = "N/A"
 
                 file_metadata = metadata.get(str(relative_path), {})
-                status = file_metadata.get("status", "Completed")
+                status = file_metadata.get("status", "Processing") # Default to processing
 
                 file_list.append({
                     "fileName": file,
