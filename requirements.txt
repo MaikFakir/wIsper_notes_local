@@ -1,5 +1,5 @@
 faster-whisper
-gradio
+Flask
 resemblyzer
 librosa
 ffmpeg-python
@@ -9,3 +9,4 @@ numpy
 langchain_experimental
 langchain
 sentence-transformers
+pyngrok

@@ -1,1 +1,6 @@
-{}
+{
+    "test_audio_20251007_035716.wav": {
+        "status": "Completed",
+        "transcription": "Loading transcription model (faster-whisper)...\nTranscription model loaded successfully.\nStarting transcription for audio_library/test_audio_20251007_035716.wav...\nTranscription for audio_library/test_audio_20251007_035716.wav complete.\nTemporary file /tmp/tmpq843iyi9.wav removed."
+    }
+}

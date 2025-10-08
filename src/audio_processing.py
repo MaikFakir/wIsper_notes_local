@@ -1,100 +1,88 @@
-# --- 1. INSTALACIONES E IMPORTACIONES ---
-import ffmpeg
-import tempfile
 import os
-from faster_whisper import WhisperModel
-import gradio as gr
+import tempfile
+import traceback
+import ffmpeg
 import torch
+from faster_whisper import WhisperModel
 
-# --- 2. UTILIDADES DE AUDIO ---
+# --- 1. MODEL MANAGEMENT (LAZY LOADING) ---
 
-def convert_audio_to_wav(audio_path):
+class ModelContainer:
+    """A simple container to ensure the transcription model is loaded only once."""
+    def __init__(self):
+        self.transcription_model = None
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.compute_type = "float16" if torch.cuda.is_available() else "int8"
+
+    def load_model(self):
+        if self.transcription_model is None:
+            print("Loading transcription model (faster-whisper)...")
+            try:
+                self.transcription_model = WhisperModel("base", device=self.device, compute_type=self.compute_type)
+                print("Transcription model loaded successfully.")
+            except Exception as e:
+                print(f"FATAL: Error loading transcription model: {e}")
+                raise
+        return self.transcription_model
+
+MODELS = ModelContainer()
+
+# --- 2. AUDIO PROCESSING UTILITIES ---
+
+def _convert_audio_to_wav(input_path):
     """
-    Convierte un archivo de audio a formato WAV a 16kHz, mono.
-    Devuelve la ruta del archivo temporal convertido.
+    Converts any audio file to a temporary 16kHz mono WAV file for processing.
     """
+    temp_wav = None
     try:
-        # Crea un archivo temporal con la extensión .wav
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
-            temp_filename = temp_file.name
+            temp_wav = temp_file.name
 
-        # Usa ffmpeg para la conversión
         (
-            ffmpeg
-            .input(audio_path)
-            .output(temp_filename, acodec='pcm_s16le', ac=1, ar='16k')
+            ffmpeg.input(input_path)
+            .output(temp_wav, acodec='pcm_s16le', ac=1, ar='16k')
             .run(overwrite_output=True, quiet=True)
         )
-        return temp_filename
-    except ffmpeg.Error as e:
-        print(f"Error de ffmpeg: {e.stderr.decode()}")
-        raise
+        return temp_wav
     except Exception as e:
-        print(f"Error inesperado en la conversión de audio: {e}")
+        print(f"Error during audio conversion: {e}")
+        if temp_wav and os.path.exists(temp_wav):
+            os.remove(temp_wav)
         raise
 
-# --- 3. CARGA DE MODELOS (LAZY LOADING) ---
-
-transcription_model = None
-
-def get_transcription_model():
-    """
-    Carga el modelo de transcripción de forma perezosa (solo cuando se necesita).
-    Esto evita que la aplicación se cuelgue al inicio.
-    """
-    global transcription_model
-    if transcription_model is None:
-        print("Cargando modelo de transcripción por primera vez...")
-        DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-        COMPUTE_TYPE = "float16" if torch.cuda.is_available() else "int8"
-        transcription_model = WhisperModel("base", device=DEVICE, compute_type=COMPUTE_TYPE)
-        print("Modelo de transcripción cargado.")
-    return transcription_model
-
-
-# --- 4. FUNCIÓN PRINCIPAL DE PROCESAMIENTO ---
+# --- 3. CORE TRANSCRIPTION LOGIC ---
 
 def transcribe_audio(audio_path):
     """
-    Transcribe un archivo de audio y devuelve el texto plano.
+    Transcribes an audio file into plain text. Diarization has been removed for stability.
     """
-    if audio_path is None:
-        return "No se recibió audio. Por favor, graba algo.", None
+    if not audio_path or not os.path.exists(audio_path):
+        return "Error: Audio file path is missing or invalid."
 
     temp_wav_path = None
     try:
-        # 1️⃣ Cargar el modelo (se inicializará solo la primera vez)
-        model = get_transcription_model()
+        # Step 1: Ensure the model is ready
+        transcription_model = MODELS.load_model()
 
-        # 2️⃣ Convertir a WAV estándar para compatibilidad y eficiencia
-        print("Convirtiendo audio a formato WAV...")
-        temp_wav_path = convert_audio_to_wav(audio_path)
-        print(f"Audio convertido y guardado en: {temp_wav_path}")
+        # Step 2: Convert audio to a standard format
+        temp_wav_path = _convert_audio_to_wav(audio_path)
 
-        # 3️⃣ Transcripción directa desde el archivo
-        print("Iniciando transcripción...")
-        segments_generator, info = model.transcribe(
-            temp_wav_path, language="es"
-        )
+        # Step 3: Transcribe audio to get segments
+        print(f"Starting transcription for {audio_path}...")
+        segments_gen, _ = transcription_model.transcribe(temp_wav_path, language="es")
 
-        # Unir los segmentos en un solo texto
-        segments = list(segments_generator)
-        full_transcription = " ".join([s.text for s in segments]).strip()
-        print("Transcripción completada.")
+        # Step 4: Concatenate segments into a single text block
+        full_transcription = " ".join(segment.text.strip() for segment in segments_gen)
 
-        if not full_transcription:
-            return "No se pudo transcribir el audio (posiblemente silencio).", audio_path
+        print(f"Transcription for {audio_path} complete.")
+        return full_transcription
 
-        print("Proceso completado.")
-        return full_transcription, audio_path
-
-    except ffmpeg.Error as e:
-        return f"Error de FFMPEG: {e.stderr.decode()}", None
     except Exception as e:
-        import traceback
-        return f"Ocurrió un error inesperado: {e}\\n{traceback.format_exc()}", None
+        print(f"An unexpected error occurred during transcription: {e}")
+        traceback.print_exc()
+        return f"Error during transcription: {e}"
     finally:
-        # 3️⃣ Limpieza del archivo temporal
+        # Clean up the temporary WAV file
         if temp_wav_path and os.path.exists(temp_wav_path):
             os.remove(temp_wav_path)
-            print(f"Archivo temporal eliminado: {temp_wav_path}")
+            print(f"Temporary file {temp_wav_path} removed.")

@@ -2,194 +2,173 @@ import os
 import json
 import shutil
 from datetime import datetime
-import librosa
-import soundfile as sf
-import gradio as gr
 
-# --- CONSTANTES ---
-# Define paths relative to this file's location to make them absolute and robust.
-_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT = os.path.dirname(_CURRENT_DIR)  # Assumes src/ is one level down from root
-AUDIO_LIBRARY_PATH = os.path.join(_PROJECT_ROOT, "audio_library")
+# --- CONSTANTS ---
+AUDIO_LIBRARY_PATH = "audio_library"
 METADATA_FILE = os.path.join(AUDIO_LIBRARY_PATH, "metadata.json")
 
-# --- FUNCIONES DE GESTIÓN DE LA BIBLIOTECA ---
+# --- METADATA HELPERS ---
 
-def get_directory_contents(path="."):
-    """
-    Obtiene el contenido de un directorio dentro de la biblioteca de audios.
-    Prefija las carpetas con '[C]' para distinguirlas.
-    """
-    path = os.path.normpath(path)
-    # Basic security check
-    if ".." in path.split(os.sep) or os.path.isabs(path):
-        path = "."
-
-    base_path = os.path.join(AUDIO_LIBRARY_PATH, path)
-    contents = []
-    if not os.path.exists(base_path):
-        os.makedirs(base_path)
-
-    for item in sorted(os.listdir(base_path)):
-        if os.path.isdir(os.path.join(base_path, item)):
-            contents.append(f"[C] {item}")
-        elif item.lower().endswith('.wav'):
-            contents.append(item)
-
-    return contents
-
-def save_to_library(current_path, audio_path, transcription):
-    """Guarda el audio y su transcripción en la ruta actual de la biblioteca."""
-    if not audio_path or not transcription:
-        return "Nada que guardar."
-
-    # Crear un nombre de archivo único con timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"audio_{timestamp}.wav"
-
-    # La ruta completa donde se guardará el archivo físico
-    physical_save_path = os.path.join(AUDIO_LIBRARY_PATH, current_path, filename)
-
-    # La clave para los metadatos (ruta relativa desde la raíz de la biblioteca)
-    metadata_key = os.path.normpath(os.path.join(current_path, filename))
-
+def _load_metadata():
+    """Loads the metadata file."""
+    if not os.path.exists(METADATA_FILE):
+        return {}
+    # Create backup and handle empty or corrupted file
     try:
-        # Cargar y convertir el audio a WAV
-        wav, sr = librosa.load(audio_path, sr=16000)
-        sf.write(physical_save_path, wav, sr)
-    except Exception as e:
-        return f"Error al guardar el archivo: {e}"
-
-    # Cargar y actualizar metadatos
-    metadata = {}
-    if os.path.exists(METADATA_FILE):
         with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-            try:
-                metadata = json.load(f)
-            except json.JSONDecodeError:
-                pass  # El archivo se sobreescribirá
+            # Check if file is empty
+            if os.path.getsize(METADATA_FILE) == 0:
+                return {}
+            return json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        # If file is corrupted or not found, create a backup and return empty metadata
+        if os.path.exists(METADATA_FILE):
+            shutil.copyfile(METADATA_FILE, f"{METADATA_FILE}.bak_{datetime.now().strftime('%Y%m%d%H%M%S')}")
+        return {}
 
-    metadata[metadata_key] = {
-        "transcription": transcription,
-        "timestamp": timestamp
-    }
 
+def _save_metadata(metadata):
+    """Saves the metadata file."""
     with open(METADATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(metadata, f, indent=4, ensure_ascii=False)
 
-    return f"¡Guardado! Audio '{filename}' añadido a '{current_path}'."
+# --- API-FACING FUNCTIONS ---
+
+def list_library_contents():
+    """
+    Scans the audio library and returns a structured list of all audio files.
+    """
+    file_list = []
+    metadata = _load_metadata()
+
+    # Ensure library path exists
+    if not os.path.exists(AUDIO_LIBRARY_PATH):
+        os.makedirs(AUDIO_LIBRARY_PATH)
+
+    for root, _, files in os.walk(AUDIO_LIBRARY_PATH):
+        for file in files:
+            if file == os.path.basename(METADATA_FILE) or file.startswith('.'):
+                continue
+
+            if file.lower().endswith(('.wav', '.mp3', '.m4a', '.ogg', '.flac')):
+                full_path = os.path.join(root, file)
+                relative_path = os.path.relpath(full_path, AUDIO_LIBRARY_PATH)
+
+                try:
+                    date_modified_ts = os.path.getmtime(full_path)
+                    date_modified = datetime.fromtimestamp(date_modified_ts).strftime("%B %d, %Y")
+                    # Duration calculation removed for stability
+                    duration_formatted = "--:--"
+
+                except Exception as e:
+                    print(f"Could not process file metadata for {full_path}: {e}")
+                    date_modified = "Unknown"
+                    duration_formatted = "N/A"
+
+                file_metadata = metadata.get(str(relative_path), {})
+                status = file_metadata.get("status", "Processing") # Default to processing
+
+                file_list.append({
+                    "fileName": file,
+                    "duration": duration_formatted,
+                    "dateCreated": date_modified,
+                    "status": status,
+                    "path": str(relative_path)
+                })
+
+    # Sort by date, most recent first
+    try:
+        file_list.sort(key=lambda x: datetime.strptime(x['dateCreated'], "%B %d, %Y") if x['dateCreated'] != 'Unknown' else datetime.min, reverse=True)
+    except ValueError as e:
+        print(f"Error sorting files by date: {e}")
+
+    return file_list
+
+def save_uploaded_file(file_storage):
+    """
+    Saves an uploaded file to the audio library.
+    """
+    if not file_storage:
+        return {"error": "No file provided"}, 400
+
+    filename = file_storage.filename
+    # Avoid path traversal attacks
+    if ".." in filename or filename.startswith("/"):
+        return {"error": "Invalid filename"}, 400
+
+    # Create a unique filename to avoid overwrites
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base, ext = os.path.splitext(filename)
+    safe_filename = f"{base}_{timestamp}{ext}"
+
+    save_path = os.path.join(AUDIO_LIBRARY_PATH, safe_filename)
+
+    try:
+        file_storage.save(save_path)
+
+        # Add a basic entry to metadata
+        metadata = _load_metadata()
+        relative_path = os.path.relpath(save_path, AUDIO_LIBRARY_PATH)
+        metadata[str(relative_path)] = {"status": "Processing"}
+        _save_metadata(metadata)
+
+        return {
+            "message": f"File '{safe_filename}' uploaded successfully",
+            "filePath": str(relative_path)
+        }, 201
+
+    except Exception as e:
+        print(f"Error saving file {safe_filename}: {e}")
+        return {"error": "Could not save file"}, 500
 
 
-def rename_library_item(current_path, selection, new_name):
-    """Renombra un archivo o carpeta y devuelve un mensaje de estado."""
-    if not selection or not new_name.strip():
-        return "Selecciona un item y proporciona un nuevo nombre."
+def delete_recording(file_path):
+    """
+    Deletes a recording from the library and its metadata.
+    """
+    if ".." in file_path or os.path.isabs(file_path):
+        return {"error": "Invalid file path"}, 400
 
-    old_name = selection.replace("[C] ", "")
-    new_name = new_name.strip()
-    old_path_full = os.path.join(AUDIO_LIBRARY_PATH, current_path, old_name)
-    new_path_full = os.path.join(AUDIO_LIBRARY_PATH, current_path, new_name)
+    full_path = os.path.join(AUDIO_LIBRARY_PATH, file_path)
 
-    if not os.path.exists(old_path_full):
-        return f"Error: El item '{old_name}' no existe."
-    if os.path.exists(new_path_full):
-        return f"Error: Ya existe un item con el nombre '{new_name}'."
+    if not os.path.exists(full_path):
+        return {"error": "File not found"}, 404
 
-    # Renombrar el archivo/carpeta físico
-    os.rename(old_path_full, new_path_full)
+    try:
+        os.remove(full_path)
 
-    # Actualizar metadatos
-    metadata = {}
-    if os.path.exists(METADATA_FILE):
-        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-            try:
-                metadata = json.load(f)
-            except json.JSONDecodeError:
-                pass
+        # Remove from metadata
+        metadata = _load_metadata()
+        relative_path = os.path.relpath(full_path, AUDIO_LIBRARY_PATH)
+        if str(relative_path) in metadata:
+            del metadata[str(relative_path)]
+            _save_metadata(metadata)
 
-    new_metadata = {}
-    old_metadata_key_base = os.path.normpath(os.path.join(current_path, old_name))
-    new_metadata_key_base = os.path.normpath(os.path.join(current_path, new_name))
+        return {"message": f"File '{file_path}' deleted successfully"}, 200
 
-    if os.path.isdir(new_path_full):  # Si es una carpeta
-        for key, value in metadata.items():
-            if key.startswith(old_metadata_key_base + os.sep):
-                new_key = new_metadata_key_base + key[len(old_metadata_key_base):]
-                new_metadata[new_key] = value
-            elif key != old_metadata_key_base:
-                new_metadata[key] = value
-    else:  # Si es un archivo
-        old_metadata_key = old_metadata_key_base
-        new_metadata_key = new_metadata_key_base
-        if not new_name.lower().endswith('.wav'):
-             new_metadata_key += '.wav'
-             os.rename(new_path_full, new_path_full + '.wav')
+    except Exception as e:
+        print(f"Error deleting file {file_path}: {e}")
+        return {"error": "Could not delete file"}, 500
 
-        for key, value in metadata.items():
-            if key == old_metadata_key:
-                new_metadata[new_metadata_key] = value
-            else:
-                new_metadata[key] = value
+def update_transcription_metadata(file_path, transcription, status):
+    """
+    Updates the metadata for a specific file with its transcription and status.
+    """
+    if ".." in file_path or os.path.isabs(file_path):
+        print(f"Invalid path provided to update_transcription_metadata: {file_path}")
+        return
 
-    with open(METADATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(new_metadata, f, indent=4, ensure_ascii=False)
+    metadata = _load_metadata()
 
-    return f"Item renombrado a '{new_name}'."
-
-
-def delete_from_library(current_path, selection):
-    """Elimina un archivo o carpeta y devuelve un mensaje de estado."""
-    if not selection:
-        return "No se ha seleccionado ningún item."
-
-    item_name = selection.replace("[C] ", "")
-    path_to_delete_full = os.path.join(AUDIO_LIBRARY_PATH, current_path, item_name)
-
-    if not os.path.exists(path_to_delete_full):
-         return f"Error: El item '{item_name}' no existe."
-
-    if os.path.isdir(path_to_delete_full):
-        shutil.rmtree(path_to_delete_full)
+    # The key in metadata is the relative path
+    if file_path in metadata:
+        metadata[file_path]["transcription"] = transcription
+        metadata[file_path]["status"] = status
     else:
-        os.remove(path_to_delete_full)
+        # This case might happen if the file was added but metadata wasn't created
+        metadata[file_path] = {
+            "transcription": transcription,
+            "status": status
+        }
 
-    metadata = {}
-    if os.path.exists(METADATA_FILE):
-        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-            try:
-                metadata = json.load(f)
-            except json.JSONDecodeError:
-                pass
-
-    new_metadata = {}
-    metadata_key_to_delete = os.path.normpath(os.path.join(current_path, item_name))
-
-    for key, value in metadata.items():
-        if not (key == metadata_key_to_delete or key.startswith(metadata_key_to_delete + os.sep)):
-            new_metadata[key] = value
-
-    with open(METADATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(new_metadata, f, indent=4, ensure_ascii=False)
-
-    return f"Item '{item_name}' eliminado."
-
-def get_file_data(current_path, selection):
-    """
-    Obtiene la ruta y la transcripción de un archivo seleccionado.
-    """
-    if selection is None or selection.startswith("[C]"):
-        return None, "Selecciona un archivo para ver su transcripción."
-
-    file_path_in_library = os.path.join(AUDIO_LIBRARY_PATH, current_path, selection)
-    metadata_key = os.path.normpath(os.path.join(current_path, selection))
-
-    transcription = "Transcripción no encontrada."
-    if os.path.exists(METADATA_FILE):
-        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-            try:
-                metadata = json.load(f)
-                transcription = metadata.get(metadata_key, {}).get("transcription", "Transcripción no encontrada.")
-            except json.JSONDecodeError:
-                pass
-
-    return file_path_in_library, transcription
+    _save_metadata(metadata)
