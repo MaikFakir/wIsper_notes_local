@@ -6,6 +6,7 @@ from src.file_management import (
     save_uploaded_file,
     delete_recording,
 )
+from pyngrok import ngrok
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -30,9 +31,7 @@ def upload_recording():
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
-    # This function now just saves the file and sets status to "Processing"
     response, status_code = save_uploaded_file(file)
-
     return jsonify(response), status_code
 
 @app.route('/api/recordings/<path:file_path>', methods=['DELETE'])
@@ -42,9 +41,32 @@ def delete_recording_endpoint(file_path):
     return jsonify(response), status_code
 
 if __name__ == '__main__':
-    # Create the audio library directory if it doesn't exist
-    if not os.path.exists(AUDIO_LIBRARY_PATH):
-        os.makedirs(AUDIO_LIBRARY_PATH)
+    # --- ngrok Tunnel Setup ---
+    # 1. Get your authtoken from https://dashboard.ngrok.com/get-started/your-authtoken
+    # 2. Paste it here:
+    NGROK_AUTHTOKEN = "PON_TU_CLAVE_AQUÍ"
 
-    # Run the Flask app
-    app.run(debug=True, port=5000)
+    if NGROK_AUTHTOKEN == "PON_TU_CLAVE_AQUÍ":
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("!!!  ERROR: Debes poner tu clave de ngrok en app.py           !!!")
+        print("!!!  Consíguela en https://dashboard.ngrok.com/get-started/your-authtoken  !!!")
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    else:
+        ngrok.set_auth_token(NGROK_AUTHTOKEN)
+
+        # Create the audio library directory if it doesn't exist
+        if not os.path.exists(AUDIO_LIBRARY_PATH):
+            os.makedirs(AUDIO_LIBRARY_PATH)
+
+        # Define the port
+        port = 5000
+
+        # Open a ngrok tunnel to the Flask app
+        public_url = ngrok.connect(port)
+        print("*****************************************************************")
+        print(f"--> URL Pública: {public_url}")
+        print("--> Copia esta URL y pégala en tu navegador.")
+        print("*****************************************************************")
+
+        # Run the Flask app without the reloader for stability with ngrok
+        app.run(port=port, use_reloader=False)

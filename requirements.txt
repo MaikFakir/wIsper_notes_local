@@ -9,3 +9,4 @@ numpy
 langchain_experimental
 langchain
 sentence-transformers
+pyngrok
