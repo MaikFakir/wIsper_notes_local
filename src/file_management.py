@@ -34,87 +34,180 @@ def _save_metadata(metadata):
 
 # --- API-FACING FUNCTIONS ---
 
-def list_library_contents():
+def list_directory_contents(relative_dir_path="."):
     """
-    Scans the audio library and returns a structured list of all audio files.
+    Scans a specific directory within the audio library and returns a flat list
+    of its contents (folders and files). The path is relative to the audio library root.
     """
-    file_list = []
+    # Sanitize path to prevent traversal attacks
+    if ".." in relative_dir_path:
+        return []
+
+    # Use os.path.abspath to resolve the path and prevent directory traversal
+    library_root = os.path.abspath(AUDIO_LIBRARY_PATH)
+    path_to_scan = os.path.abspath(os.path.join(library_root, relative_dir_path))
+
+    # Security check: ensure the resolved path is still within the library
+    if not path_to_scan.startswith(library_root):
+        return []
+
+    # Create the directory if it doesn't exist, e.g., on first run
+    if not os.path.exists(path_to_scan):
+        os.makedirs(path_to_scan, exist_ok=True)
+        return []
+
+    items = []
     metadata = _load_metadata()
 
-    # Ensure library path exists
-    if not os.path.exists(AUDIO_LIBRARY_PATH):
-        os.makedirs(AUDIO_LIBRARY_PATH)
+    # First, process directories
+    for entry_name in sorted(os.listdir(path_to_scan)):
+        full_path = os.path.join(path_to_scan, entry_name)
+        if os.path.isdir(full_path) and not entry_name.startswith('.'):
+            relative_path = os.path.relpath(full_path, AUDIO_LIBRARY_PATH)
+            items.append({
+                "type": "folder",
+                "name": entry_name,
+                "path": str(relative_path).replace('\\', '/')
+            })
 
-    for root, _, files in os.walk(AUDIO_LIBRARY_PATH):
-        for file in files:
-            if file == os.path.basename(METADATA_FILE) or file.startswith('.'):
+    # Then, process files
+    for entry_name in sorted(os.listdir(path_to_scan)):
+        full_path = os.path.join(path_to_scan, entry_name)
+        if os.path.isfile(full_path):
+            # Skip metadata file and hidden files
+            if entry_name == os.path.basename(METADATA_FILE) or entry_name.startswith('.'):
                 continue
 
-            if file.lower().endswith(('.wav', '.mp3', '.m4a', '.ogg', '.flac')):
-                full_path = os.path.join(root, file)
+            if entry_name.lower().endswith(('.wav', '.mp3', '.m4a', '.ogg', '.flac')):
                 relative_path = os.path.relpath(full_path, AUDIO_LIBRARY_PATH)
-
                 try:
                     date_modified_ts = os.path.getmtime(full_path)
                     date_modified = datetime.fromtimestamp(date_modified_ts).strftime("%B %d, %Y")
-                    # Duration calculation removed for stability
                     duration_formatted = "--:--"
-
                 except Exception as e:
                     print(f"Could not process file metadata for {full_path}: {e}")
                     date_modified = "Unknown"
                     duration_formatted = "N/A"
 
                 file_metadata = metadata.get(str(relative_path), {})
-                status = file_metadata.get("status", "Processing") # Default to processing
+                status = file_metadata.get("status", "Processing")
 
-                file_list.append({
-                    "fileName": file,
+                items.append({
+                    "type": "file",
+                    "fileName": entry_name,
                     "duration": duration_formatted,
                     "dateCreated": date_modified,
                     "status": status,
-                    "path": str(relative_path)
+                    "path": str(relative_path).replace('\\', '/')
                 })
+    return items
 
-    # Sort by date, most recent first
-    try:
-        file_list.sort(key=lambda x: datetime.strptime(x['dateCreated'], "%B %d, %Y") if x['dateCreated'] != 'Unknown' else datetime.min, reverse=True)
-    except ValueError as e:
-        print(f"Error sorting files by date: {e}")
-
-    return file_list
-
-def save_uploaded_file(file_storage):
+def get_library_tree():
     """
-    Saves an uploaded file to the audio library.
+    Recursively scans the audio library and returns a nested structure of folders.
+    """
+    def _scan_dir(path):
+        folders = []
+        try:
+            for entry in os.scandir(path):
+                if entry.is_dir() and not entry.name.startswith('.'):
+                    relative_path = os.path.relpath(entry.path, AUDIO_LIBRARY_PATH)
+                    children = _scan_dir(entry.path)
+                    folder_data = {
+                        "type": "folder",
+                        "name": entry.name,
+                        "path": str(relative_path).replace('\\', '/'),
+                        "children": children
+                    }
+                    folders.append(folder_data)
+        except FileNotFoundError:
+            return [] # Return empty list if path doesn't exist
+        # Sort folders by name for consistent ordering
+        return sorted(folders, key=lambda f: f['name'])
+
+    # Ensure the root library path exists before scanning
+    if not os.path.exists(AUDIO_LIBRARY_PATH):
+        os.makedirs(AUDIO_LIBRARY_PATH)
+
+    return _scan_dir(AUDIO_LIBRARY_PATH)
+
+def create_folder(new_folder_path):
+    """
+    Creates a new folder inside the audio library.
+    The path is relative to the audio library root.
+    """
+    # Sanitize path to prevent traversal attacks
+    if ".." in new_folder_path or os.path.isabs(new_folder_path):
+        return {"error": "Invalid folder path"}, 400
+
+    # Use os.path.abspath to resolve the path and prevent directory traversal
+    library_root = os.path.abspath(AUDIO_LIBRARY_PATH)
+    full_path = os.path.abspath(os.path.join(library_root, new_folder_path))
+
+    # Security check: ensure the resolved path is still within the library
+    if not full_path.startswith(library_root):
+        return {"error": "Invalid folder path"}, 400
+
+    if os.path.exists(full_path):
+        return {"error": "Folder already exists"}, 409 # HTTP 409 Conflict
+
+    try:
+        os.makedirs(full_path)
+        return {"message": f"Folder '{new_folder_path}' created successfully"}, 201
+    except Exception as e:
+        print(f"Error creating folder {new_folder_path}: {e}")
+        return {"error": "Could not create folder"}, 500
+
+def save_uploaded_file(file_storage, destination_folder=".", model="base"):
+    """
+    Saves an uploaded file to a specific folder within the audio library
+    and records the selected transcription model.
     """
     if not file_storage:
         return {"error": "No file provided"}, 400
 
     filename = file_storage.filename
-    # Avoid path traversal attacks
-    if ".." in filename or filename.startswith("/"):
+    # Security checks for filename
+    if ".." in filename or os.path.isabs(filename):
         return {"error": "Invalid filename"}, 400
+
+    # Security checks for destination folder
+    if ".." in destination_folder or os.path.isabs(destination_folder):
+        return {"error": "Invalid destination folder"}, 400
+
+    # Resolve the destination path safely
+    library_root = os.path.abspath(AUDIO_LIBRARY_PATH)
+    destination_path = os.path.abspath(os.path.join(library_root, destination_folder))
+
+    # Final security check to ensure we are still inside the library
+    if not destination_path.startswith(library_root):
+        return {"error": "Invalid destination folder"}, 400
+
+    # Create the destination directory if it doesn't exist
+    os.makedirs(destination_path, exist_ok=True)
 
     # Create a unique filename to avoid overwrites
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base, ext = os.path.splitext(filename)
-    safe_filename = f"{base}_{timestamp}{ext}"
+    safe_filename = f"{base.replace(' ', '_')}_{timestamp}{ext}"
 
-    save_path = os.path.join(AUDIO_LIBRARY_PATH, safe_filename)
+    save_path = os.path.join(destination_path, safe_filename)
 
     try:
         file_storage.save(save_path)
 
-        # Add a basic entry to metadata
+        # Add a basic entry to metadata, now including the model
         metadata = _load_metadata()
         relative_path = os.path.relpath(save_path, AUDIO_LIBRARY_PATH)
-        metadata[str(relative_path)] = {"status": "Processing"}
+        metadata[str(relative_path).replace('\\', '/')] = {
+            "status": "Processing",
+            "model": model
+        }
         _save_metadata(metadata)
 
         return {
-            "message": f"File '{safe_filename}' uploaded successfully",
-            "filePath": str(relative_path)
+            "message": f"File '{safe_filename}' uploaded successfully to '{destination_folder}'",
+            "filePath": str(relative_path).replace('\\', '/')
         }, 201
 
     except Exception as e:
@@ -172,3 +265,131 @@ def update_transcription_metadata(file_path, transcription, status):
         }
 
     _save_metadata(metadata)
+
+def rename_item(relative_path, new_name):
+    """
+    Renames a file or folder and updates its metadata.
+    """
+    # Security checks
+    if ".." in relative_path or os.path.isabs(relative_path) or ".." in new_name or "/" in new_name:
+        return {"error": "Invalid path or name"}, 400
+
+    library_root = os.path.abspath(AUDIO_LIBRARY_PATH)
+    old_full_path = os.path.abspath(os.path.join(library_root, relative_path))
+
+    if not old_full_path.startswith(library_root) or not os.path.exists(old_full_path):
+        return {"error": "File or folder not found"}, 404
+
+    # Construct new path
+    new_full_path = os.path.join(os.path.dirname(old_full_path), new_name)
+    new_relative_path = os.path.relpath(new_full_path, library_root)
+
+    if os.path.exists(new_full_path):
+        return {"error": "An item with the new name already exists"}, 409
+
+    try:
+        # Rename the actual file/folder
+        os.rename(old_full_path, new_full_path)
+
+        # Update metadata
+        metadata = _load_metadata()
+        updated_metadata = {}
+        for key, value in metadata.items():
+            if key == relative_path:
+                updated_metadata[new_relative_path] = value
+            elif key.startswith(relative_path + '/'):
+                new_key = new_relative_path + key[len(relative_path):]
+                updated_metadata[new_key] = value
+            else:
+                updated_metadata[key] = value
+        _save_metadata(updated_metadata)
+
+        return {"message": "Item renamed successfully"}, 200
+
+    except Exception as e:
+        print(f"Error renaming item '{relative_path}': {e}")
+        return {"error": "Could not rename item"}, 500
+
+def move_item(source_relative_path, dest_relative_path):
+    """
+    Moves a file or folder to a new destination and updates metadata.
+    """
+    # Security checks
+    if ".." in source_relative_path or os.path.isabs(source_relative_path) or \
+       ".." in dest_relative_path or os.path.isabs(dest_relative_path):
+        return {"error": "Invalid source or destination path"}, 400
+
+    library_root = os.path.abspath(AUDIO_LIBRARY_PATH)
+    source_full_path = os.path.abspath(os.path.join(library_root, source_relative_path))
+    dest_full_path = os.path.abspath(os.path.join(library_root, dest_relative_path))
+
+    # Check if source exists and is in the library
+    if not source_full_path.startswith(library_root) or not os.path.exists(source_full_path):
+        return {"error": "Source item not found"}, 404
+
+    # Check if destination is in the library
+    if not dest_full_path.startswith(library_root):
+        return {"error": "Invalid destination"}, 400
+
+    # Ensure destination is a directory
+    if os.path.exists(dest_full_path) and not os.path.isdir(dest_full_path):
+        return {"error": "Destination is not a folder"}, 400
+
+    os.makedirs(dest_full_path, exist_ok=True)
+
+    # Final destination path for the moved item
+    final_path = os.path.join(dest_full_path, os.path.basename(source_full_path))
+    final_relative_path = os.path.relpath(final_path, library_root)
+
+    if os.path.exists(final_path):
+        return {"error": "An item with the same name already exists in the destination"}, 409
+
+    try:
+        # Move the file/folder
+        shutil.move(source_full_path, final_path)
+
+        # Update metadata
+        metadata = _load_metadata()
+        updated_metadata = {}
+        for key, value in metadata.items():
+            if key == source_relative_path:
+                updated_metadata[final_relative_path] = value
+            elif key.startswith(source_relative_path + '/'):
+                new_key = final_relative_path + key[len(source_relative_path):]
+                updated_metadata[new_key] = value
+            else:
+                updated_metadata[key] = value
+        _save_metadata(updated_metadata)
+
+        return {"message": "Item moved successfully"}, 200
+
+    except Exception as e:
+        print(f"Error moving item '{source_relative_path}': {e}")
+        return {"error": "Could not move item"}, 500
+
+def get_file_details(relative_path):
+    """
+    Retrieves all available details for a single file, including its transcription.
+    """
+    # Security checks
+    if ".." in relative_path or os.path.isabs(relative_path):
+        return {"error": "Invalid file path"}, 400
+
+    library_root = os.path.abspath(AUDIO_LIBRARY_PATH)
+    full_path = os.path.abspath(os.path.join(library_root, relative_path))
+
+    if not full_path.startswith(library_root) or not os.path.isfile(full_path):
+        return {"error": "File not found"}, 404
+
+    metadata = _load_metadata()
+    file_metadata = metadata.get(relative_path, {})
+
+    details = {
+        "fileName": os.path.basename(relative_path),
+        "path": relative_path,
+        "status": file_metadata.get("status", "Unknown"),
+        "transcription": file_metadata.get("transcription", None),
+        "spectrogram": file_metadata.get("spectrogram", None) # Placeholder for now
+    }
+
+    return details, 200
