@@ -64,8 +64,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const statusClass = rec.status.toLowerCase();
             row.innerHTML = `
                 <td>${rec.fileName}</td>
-                <td>${rec.duration}</td>
-                <td>${rec.dateCreated}</td>
+                <td class="optional-column">${rec.duration}</td>
+                <td class="optional-column">${rec.dateCreated}</td>
                 <td><span class="status ${statusClass}">${rec.status}</span></td>
                 <td class="actions">
                     <button class="actions-btn" data-path="${rec.path}">...</button>
