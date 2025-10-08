@@ -150,15 +150,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // For clicking on folders in the main content area
-    recordingsTbody.addEventListener('click', (event) => {
-        const folderRow = event.target.closest('.folder-row');
-        if (folderRow) {
-            const path = folderRow.dataset.path;
-            fetchAndDisplayContents(path);
-        }
-    });
-
     async function createNewFolder(path) {
         try {
             const response = await fetch('/api/folders', {
@@ -286,8 +277,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 method: 'POST',
                 body: formData,
             });
-            if (!response.ok) throw new Error((await response.json()).error);
-            fetchAndDisplayContents(currentPath); // Refresh view
+
+            const data = await response.json(); // Always get the JSON body
+
+            if (!response.ok) {
+                // Use the error message from the JSON body if available
+                throw new Error(data.error || 'File upload failed');
+            }
+
+            // On success, automatically switch to the detail view of the new file
+            if (data.filePath) {
+                await showDetailView(data.filePath);
+            } else {
+                // Fallback to just refreshing the list if filePath isn't returned for some reason
+                await fetchAndDisplayContents(currentPath);
+            }
         } catch (error) {
             console.error('Error uploading file:', error);
             alert(`Upload failed: ${error.message}`);
@@ -512,32 +516,49 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- Event Listeners (Final Update) ---
 
-    // Use event delegation for action buttons and menu items
+    // A single, delegated event listener for the entire file browser table body
     recordingsTbody.addEventListener('click', async (event) => {
-        event.preventDefault();
         const target = event.target;
+        const folderRow = target.closest('.folder-row');
+        const actionButton = target.closest('.actions-btn');
+        const actionMenuItem = target.closest('.actions-menu a');
 
-        if (target.classList.contains('actions-btn')) {
-            const path = target.dataset.path;
-            const cell = target.closest('td');
+        // Case 1: Click on a folder row
+        if (folderRow) {
+            const path = folderRow.dataset.path;
+            fetchAndDisplayContents(path);
+            return;
+        }
+
+        // Case 2: Click on the '...' actions button
+        if (actionButton) {
+            event.preventDefault(); // Prevent any default button action
+            const path = actionButton.dataset.path;
+            const cell = actionButton.closest('td');
+            // Toggle menu: if a menu for this button isn't open, create one.
+            // If it is open, the global click listener below will handle closing it.
             if (!cell.querySelector('.actions-menu')) {
                  createActionMenu(path, cell);
+            } else {
+                 closeAllActionMenus();
             }
             return;
         }
 
-        if (target.closest('.actions-menu')) {
-            const path = target.dataset.path;
-            if (target.classList.contains('action-delete')) {
+        // Case 3: Click on an item within the actions menu
+        if (actionMenuItem) {
+            event.preventDefault(); // Prevent default link behavior
+            const path = actionMenuItem.dataset.path;
+            if (actionMenuItem.classList.contains('action-delete')) {
                 await deleteFile(path);
-            } else if (target.classList.contains('action-open')) {
-                await showDetailView(path); // <-- Connect to detail view
-            } else if (target.classList.contains('action-rename')) {
+            } else if (actionMenuItem.classList.contains('action-open')) {
+                await showDetailView(path);
+            } else if (actionMenuItem.classList.contains('action-rename')) {
                 openRenameModal(path);
-            } else if (target.classList.contains('action-move')) {
+            } else if (actionMenuItem.classList.contains('action-move')) {
                 await openMoveModal(path);
             }
-            closeAllActionMenus();
+            closeAllActionMenus(); // Close menu after action
         }
     });
 
