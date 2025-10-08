@@ -95,55 +95,26 @@ def get_file_details_endpoint(relative_path):
     response, status_code = get_file_details(relative_path)
     return jsonify(response), status_code
 
-# Check if running in Google Colab and try to import userdata
-try:
-    from google.colab import userdata
-    IS_COLAB = True
-except ImportError:
-    IS_COLAB = False
-
 if __name__ == '__main__':
     # --- ngrok Tunnel Setup ---
-    ngrok_authtoken = None
+    # Try to get the authtoken from the environment variable first.
+    ngrok_authtoken = os.environ.get("NGROK_AUTHTOKEN")
 
-    # 1. (Colab-specific) Try to get the token from Colab's userdata
-    if IS_COLAB:
-        print("INFO: Running in Google Colab. Checking for NGROK_AUTHTOKEN in Colab secrets.")
-        try:
-            ngrok_authtoken = userdata.get('NGROK_AUTHTOKEN')
-            if ngrok_authtoken:
-                print("INFO: Found ngrok token in Colab secrets.")
-        except Exception as e:
-            print(f"INFO: Could not retrieve token from Colab secrets: {e}")
-
-
-    # 2. If not found in Colab, try environment variable
+    # If not found in env, try to read from a file named .ngrok_authtoken
     if not ngrok_authtoken:
-        print("INFO: Checking for NGROK_AUTHTOKEN environment variable.")
-        ngrok_authtoken = os.environ.get("NGROK_AUTHTOKEN")
-        if ngrok_authtoken:
-            print("INFO: Found ngrok token in environment variables.")
-
-
-    # 3. If not found in env, try to read from a file
-    if not ngrok_authtoken:
-        print("INFO: Checking for .ngrok_authtoken file.")
         try:
             with open(".ngrok_authtoken", "r") as f:
                 ngrok_authtoken = f.read().strip()
-            if ngrok_authtoken:
-                print("INFO: Found ngrok token in .ngrok_authtoken file.")
         except FileNotFoundError:
-            pass # This is an expected case
+            print("INFO: .ngrok_authtoken file not found. Continuing without a persistent token.")
         except Exception as e:
             print(f"ERROR: Could not read .ngrok_authtoken file: {e}")
 
-    # Set the token if it was found by any method
     if ngrok_authtoken:
         print("INFO: Setting ngrok authtoken.")
         ngrok.set_auth_token(ngrok_authtoken)
     else:
-        print("WARNING: ngrok authtoken not found. The tunnel will be temporary. Sign up at https://ngrok.com/signup to get a free token.")
+        print("WARNING: ngrok authtoken not found. The tunnel will be temporary.")
 
 
     # Create the audio library directory if it doesn't exist
