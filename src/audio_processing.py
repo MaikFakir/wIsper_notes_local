@@ -3,7 +3,6 @@ import torch
 import os
 import gradio as gr
 from datetime import timedelta
-from google.colab import userdata
 
 # --- 1. CONFIGURACIÓN ---
 
@@ -12,12 +11,12 @@ COMPUTE_TYPE = "float16" if torch.cuda.is_available() else "int8"
 
 def get_hf_token():
     """
-    Obtiene el token de Hugging Face desde los 'Secrets' de Google Colab.
-    Este script está diseñado para funcionar exclusivamente en Google Colab.
+    Obtiene el token de Hugging Face exclusivamente desde la variable de entorno HF_TOKEN.
+    Este es el método recomendado para gestionar secretos de forma segura en diferentes entornos, incluido Google Colab.
     """
-    token = userdata.get('HF_TOKEN')
+    token = os.environ.get("HF_TOKEN")
     if not token:
-        print("Advertencia: No se encontró el secreto 'HF_TOKEN' en Google Colab. La diarización fallará.")
+        print("Advertencia: La variable de entorno HF_TOKEN no está configurada. La diarización fallará.")
     return token
 
 HF_TOKEN = get_hf_token()
