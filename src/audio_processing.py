@@ -15,7 +15,7 @@ def get_hf_token():
     Obtiene el token de Hugging Face desde los 'Secrets' de Google Colab.
     Este script está diseñado para funcionar exclusivamente en Google Colab.
     """
-    token = userdata.get('HF_TOKEN')
+    token = os.environ.get('HF_TOKEN')
     if not token:
         print("Advertencia: No se encontró el secreto 'HF_TOKEN' en Google Colab. La diarización fallará.")
     return token
