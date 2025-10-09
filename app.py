@@ -1,6 +1,6 @@
 import gradio as gr
 import os
-from src.audio_processing import transcribir_con_diarizacion
+from src.audio_processing import transcribir_con_diarizacion, HF_TOKEN
 from src.file_management import (
     AUDIO_LIBRARY_PATH,
     create_folder_in_library,
@@ -166,12 +166,15 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
 if __name__ == "__main__":
     if not os.path.exists(AUDIO_LIBRARY_PATH):
         os.makedirs(AUDIO_LIBRARY_PATH)
-    if not os.environ.get("HF_TOKEN"):
+    if not HF_TOKEN:
         print("\n" + "="*80)
-        print("AVISO: La variable de entorno HF_TOKEN no está configurada.")
+        print("AVISO: El token de Hugging Face no se ha encontrado.")
         print("La diarización de hablantes no funcionará.")
-        print("1. Ve a https://huggingface.co/settings/tokens para crear un token.")
-        print("2. Acepta los términos de 'pyannote/speaker-diarization-3.1' y 'pyannote/segmentation-3.0'.")
-        print("3. Configura la variable de entorno: export HF_TOKEN='tu_token_aqui'")
+        print("Para solucionarlo, puedes:")
+        print("  a) Crear un archivo llamado '.Hugging_Token' en la raíz del proyecto y pegar tu token dentro.")
+        print("  b) O bien, configurar la variable de entorno HF_TOKEN.")
+        print("\nRecuerda aceptar los términos de los modelos en Hugging Face para que la diarización funcione:")
+        print("- pyannote/speaker-diarization-3.1")
+        print("- pyannote/segmentation-3.0")
         print("="*80 + "\n")
     demo.launch(share=False, debug=True)
