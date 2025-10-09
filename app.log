@@ -1,0 +1,2 @@
+INFO: Setting ngrok authtoken.
+t=2025-10-09T02:40:21+0000 lvl=warn msg="can't bind default web address, trying alternatives" obj=web addr=127.0.0.1:4040

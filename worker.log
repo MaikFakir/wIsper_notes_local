@@ -1,0 +1,5 @@
+--- Audio Processing Dispatcher Started ---
+Watching for files to process. Press Ctrl+C to exit.
+DEBUG: Metadata loaded: {'test_audio_20251007_035716.wav': {'status': 'Completed', 'transcription': 'Loading transcription model (faster-whisper)...\nTranscription model loaded successfully.\nStarting transcription for audio_library/test_audio_20251007_035716.wav...\nTranscription for audio_library/test_audio_20251007_035716.wav complete.\nTemporary file /tmp/tmpq843iyi9.wav removed.'}, 'test_file.wav': {'status': 'Processing', 'model': 'base'}}
+Dispatcher: Found 1 file(s) to process.
+Dispatcher: Starting transcription for audio_library/test_file.wav using model 'base'...
