@@ -8,7 +8,25 @@ from datetime import timedelta
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 COMPUTE_TYPE = "float16" if torch.cuda.is_available() else "int8"
-HF_TOKEN = os.environ.get("HF_TOKEN")
+
+def get_hf_token():
+    """Lee el token de Hugging Face desde el archivo .Hugging_Token o la variable de entorno."""
+    token_path = ".Hugging_Token"
+    # Primero, intenta leer desde el archivo
+    if os.path.exists(token_path):
+        with open(token_path, "r") as f:
+            token = f.read().strip()
+        if token:
+            # Establecer la variable de entorno para que otros módulos puedan usarla si es necesario
+            os.environ['HF_TOKEN'] = token
+            return token
+
+    # Si el archivo no existe o está vacío, intenta obtenerla de la variable de entorno
+    token = os.environ.get("HF_TOKEN")
+    return token
+
+HF_TOKEN = get_hf_token()
+
 
 # Cache para los modelos
 model_cache = {}
