@@ -7,124 +7,59 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <aside class="sidebar">
-            <div class="logo">
-                <h1>AudioTranscribe</h1>
-            </div>
-            <div id="folder-tree" class="navigation">
-                <!-- Folder tree will be dynamically inserted here -->
-            </div>
-        </aside>
+    <div class="app-container">
+        <header class="app-header">
+            <h1>AudioTranscribe</h1>
+            <p>A simple interface for recording and transcribing audio.</p>
+        </header>
+
         <main class="main-content">
-            <!-- Main File Browser View -->
-            <div id="file-browser-view">
-                <header class="main-header">
-                    <h2 id="current-folder-title">My Recordings</h2>
-                    <div class="header-actions">
-                        <button class="new-recording-btn">+ New Recording</button>
-                        <button class="upload-btn">↑ Upload Audio</button>
-                        <div class="user-profile">
-                            <img src="https://via.placeholder.com/40" alt="User Avatar">
-                        </div>
-                    </div>
-                </header>
-                <div class="toolbar">
-                    <input type="text" placeholder="Search by name" class="search-bar">
-                    <div class="sort-filter">
-                        <span>Sort by Date</span>
-                        <span>Filter by Status</span>
-                    </div>
+            <!-- Input Component -->
+            <div class="io-component input-component">
+                <div class="component-header">
+                    <span>Graba o sube tu audio aquí</span>
                 </div>
-                <div class="recordings-list">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>File Name</th>
-                                <th class="optional-column">Duration</th>
-                                <th class="optional-column">Date Created</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- File and folder rows will be dynamically inserted here -->
-                        </tbody>
-                    </table>
+                <div class="component-body">
+                    <div class="audio-controls">
+                        <button id="record-btn" class="control-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+                            <span>Record</span>
+                        </button>
+                        <button id="upload-btn" class="control-btn">
+                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                            <span>Upload</span>
+                        </button>
+                    </div>
+                    <div id="audio-player-container" style="display:none;"></div>
                 </div>
             </div>
 
-            <!-- Detail View (Initially Hidden) -->
-            <div id="detail-view" style="display: none;">
-                 <header class="main-header">
-                    <button id="back-to-browser-btn">← Back</button>
-                    <h2 id="detail-file-name"></h2>
-                </header>
-                <div class="detail-content">
-                    <div id="spectrogram-container">
-                        <h3>Spectrogram</h3>
-                        <!-- Spectrogram will be loaded here -->
-                        <p>Spectrogram loading...</p>
-                    </div>
-                    <div id="transcription-container">
-                        <h3>Transcription</h3>
-                        <p id="transcription-text">
-                            Transcription not available or still processing.
-                        </p>
-                    </div>
+            <!-- Output Component -->
+            <div class="io-component output-component">
+                <div class="component-header">
+                    <span>Transcripción</span>
+                </div>
+                <div class="component-body">
+                    <textarea id="transcription-output" readonly placeholder="La transcripción aparecerá aquí..."></textarea>
                 </div>
             </div>
         </main>
     </div>
+
     <input type="file" id="audio-upload-input" hidden accept="audio/*">
 
-    <!-- Modals -->
-    <div id="rename-modal" class="modal" style="display:none;">
-        <div class="modal-content">
-            <span class="close-btn">&times;</span>
-            <h2>Rename Item</h2>
-            <p>Enter a new name for <strong id="rename-item-name"></strong>:</p>
-            <input type="text" id="rename-input" placeholder="New name...">
-            <button id="rename-confirm-btn">Rename</button>
-        </div>
-    </div>
-
-    <div id="move-modal" class="modal" style="display:none;">
-        <div class="modal-content">
-            <span class="close-btn">&times;</span>
-            <h2>Move Item</h2>
-            <p>Select a new folder for <strong id="move-item-name"></strong>:</p>
-            <div id="move-folder-tree">
-                <!-- Dynamic folder tree for move destination -->
-            </div>
-            <button id="move-confirm-btn" disabled>Move Here</button>
-        </div>
-    </div>
-
+    <!-- Model Selection Modal (Simplified) -->
     <div id="model-selection-modal" class="modal" style="display:none;">
         <div class="modal-content">
             <span class="close-btn">&times;</span>
-            <h2 id="model-modal-title">Select Transcription Model</h2>
-            <p id="model-modal-description">Choose the model for your transcription.</p>
+            <h2>Select Transcription Model</h2>
             <div class="model-selection">
-                 <div class="model-option" data-model="tiny">
-                    <h5>tiny</h5>
-                    <p>Fastest, for testing.</p>
-                </div>
-                <div class="model-option active" data-model="base">
-                    <h5>base</h5>
-                    <p>Good balance.</p>
-                </div>
-                <div class="model-option" data-model="small">
-                    <h5>small</h5>
-                    <p>More accurate.</p>
-                </div>
-                <div class="model-option" data-model="medium">
-                    <h5>medium</h5>
-                    <p>High accuracy.</p>
-                </div>
+                 <div class="model-option" data-model="tiny"><h5>tiny</h5><p>Fastest</p></div>
+                <div class="model-option active" data-model="base"><h5>base</h5><p>Balanced</p></div>
+                <div class="model-option" data-model="small"><h5>small</h5><p>Accurate</p></div>
+                <div class="model-option" data-model="medium"><h5>medium</h5><p>Very Accurate</p></div>
             </div>
-            <button id="model-confirm-btn">Start</button>
+            <button id="model-confirm-btn">Confirm</button>
         </div>
     </div>
 
