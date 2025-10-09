@@ -2,13 +2,7 @@ import os
 from flask import Flask, render_template, jsonify, request
 from src.file_management import (
     AUDIO_LIBRARY_PATH,
-    list_directory_contents,
-    get_library_tree,
-    create_folder,
     save_uploaded_file,
-    delete_recording,
-    rename_item,
-    move_item,
     get_file_details,
 )
 from pyngrok import ngrok
@@ -19,32 +13,6 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 def index():
     """Renders the main application page."""
     return render_template('index.html')
-
-@app.route('/api/recordings', methods=['GET'])
-def get_recordings():
-    """
-    Returns a list of recordings from a specific folder.
-    Defaults to the root of the library if no path is provided.
-    """
-    folder_path = request.args.get('path', '.')
-    recordings = list_directory_contents(folder_path)
-    return jsonify(recordings)
-
-@app.route('/api/folders/tree', methods=['GET'])
-def get_folder_tree():
-    """Returns the nested folder structure of the audio library."""
-    tree = get_library_tree()
-    return jsonify(tree)
-
-@app.route('/api/folders', methods=['POST'])
-def create_new_folder():
-    """Creates a new folder in the audio library."""
-    data = request.get_json()
-    if not data or 'path' not in data:
-        return jsonify({"error": "No path provided"}), 400
-
-    response, status_code = create_folder(data['path'])
-    return jsonify(response), status_code
 
 @app.route('/api/recordings', methods=['POST'])
 def upload_recording():
@@ -61,32 +29,6 @@ def upload_recording():
     model = request.form.get('model', 'base') # Default to 'base' if not provided
 
     response, status_code = save_uploaded_file(file, destination_folder, model)
-    return jsonify(response), status_code
-
-@app.route('/api/recordings/<path:file_path>', methods=['DELETE'])
-def delete_recording_endpoint(file_path):
-    """Deletes a specific recording."""
-    response, status_code = delete_recording(file_path)
-    return jsonify(response), status_code
-
-@app.route('/api/item/rename', methods=['POST'])
-def rename_item_endpoint():
-    """Renames a file or folder."""
-    data = request.get_json()
-    if not data or 'path' not in data or 'new_name' not in data:
-        return jsonify({"error": "Missing path or new_name"}), 400
-
-    response, status_code = rename_item(data['path'], data['new_name'])
-    return jsonify(response), status_code
-
-@app.route('/api/item/move', methods=['POST'])
-def move_item_endpoint():
-    """Moves a file or folder."""
-    data = request.get_json()
-    if not data or 'source' not in data or 'destination' not in data:
-        return jsonify({"error": "Missing source or destination"}), 400
-
-    response, status_code = move_item(data['source'], data['destination'])
     return jsonify(response), status_code
 
 @app.route('/api/file/<path:relative_path>', methods=['GET'])
