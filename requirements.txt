@@ -1,8 +1,25 @@
-whisperx
-pyannote.audio>=3.1
+# --- Core ML/Audio Libraries ---
+# Let pip resolve the correct torch/torchaudio versions for the environment
+torch
+torchaudio
+
+# Dependencies from WhisperX's official pyproject.toml
+ctranslate2>=4.5.0
 faster-whisper
+nltk>=3.9.1
+numpy
+onnxruntime<1.20.0,>=1.19
+pandas<2.3.0,>=2.2.3
+pyannote.audio<4.0.0,>=3.3.2
+transformers>=4.48.0
+av<16.0.0
+
+# --- Application Framework ---
 gradio
+
+# --- Other Utilities ---
 librosa
 ffmpeg-python
-torch
-numpy
+
+# --- Install WhisperX itself from GitHub ---
+git+https://github.com/m-bain/whisperx.git
