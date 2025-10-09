@@ -128,9 +128,14 @@ def transcribir_con_diarizacion(audio_path, model_name="base", language_code="es
     # --- 4. Diarización de Hablantes (si hay token) ---
     if HF_TOKEN:
         try:
-            gr.Info("Realizando diarización de hablantes...")
-            diarize_model = whisperx.DiarizationPipeline(use_auth_token=HF_TOKEN, device=DEVICE)
-            diarize_segments = diarize_model(audio)
+            gr.Info("Realizando diarización de hablantes con pyannote/speaker-diarization-3.1...")
+            diarize_model = whisperx.DiarizationPipeline(
+                model_name="pyannote/speaker-diarization-3.1",
+                use_auth_token=HF_TOKEN,
+                device=DEVICE
+            )
+            # WhisperX ahora espera que el audio para diarización sea un diccionario
+            diarize_segments = diarize_model({"waveform": torch.from_numpy(audio[None, :]), "sample_rate": 16000})
             result = whisperx.assign_word_speakers(diarize_segments, result)
         except Exception as e:
             gr.Warning(f"Error en diarización: {e}. Se omitirán los hablantes.")

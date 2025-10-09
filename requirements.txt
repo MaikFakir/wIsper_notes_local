@@ -1,8 +1,19 @@
-whisperx
-pyannote.audio>=3.1
+# --- Core ML/Audio Libraries ---
+# Let pip resolve the correct torch version for the environment
+torch
+torchaudio
+
+# Installing whisperx directly from git to get the latest version.
+# This will pull in a compatible version of pyannote.audio.
+git+https://github.com/m-bain/whisperx.git
+
+# faster-whisper is a dependency for whisperx
 faster-whisper
+
+# --- Application Framework ---
 gradio
+
+# --- Audio/File Utilities ---
 librosa
 ffmpeg-python
-torch
 numpy
