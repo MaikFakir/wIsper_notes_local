@@ -3,7 +3,6 @@ import torch
 import os
 import gradio as gr
 from datetime import timedelta
-from google.colab import userdata
 
 # --- 1. CONFIGURACIÓN ---
 
@@ -12,12 +11,12 @@ COMPUTE_TYPE = "float16" if torch.cuda.is_available() else "int8"
 
 def get_hf_token():
     """
-    Obtiene el token de Hugging Face desde los 'Secrets' de Google Colab.
-    Este script está diseñado para funcionar exclusivamente en Google Colab.
+    Obtiene el token de Hugging Face desde las variables de entorno.
     """
     token = os.environ.get('HF_TOKEN')
     if not token:
-        print("Advertencia: No se encontró el secreto 'HF_TOKEN' en Google Colab. La diarización fallará.")
+        # Esta advertencia es útil para la depuración en la consola
+        print("Advertencia: La variable de entorno 'HF_TOKEN' no se ha configurado. La diarización puede fallar.")
     return token
 
 HF_TOKEN = get_hf_token()
@@ -87,59 +86,67 @@ def transcribir_con_diarizacion(audio_path, model_name="base", language_code="es
     """
     Transcribe un archivo de audio usando WhisperX para obtener marcas de tiempo
     a nivel de palabra y realiza diarización de hablantes.
+    Devuelve la transcripción y la ruta del audio.
     """
     if audio_path is None:
-        return "No se recibió audio. Por favor, graba o sube algo.", None, gr.update()
+        gr.Warning("No se recibió audio. Por favor, graba o sube algo.")
+        return "No se recibió audio.", None
 
     # --- Validación del token de Hugging Face ---
     if not HF_TOKEN:
         gr.Warning("No se ha configurado el token de Hugging Face (HF_TOKEN). La diarización no funcionará.")
-        # Se puede continuar sin diarización, pero por ahora se devuelve un error claro.
-        return "Error: Falta el token de Hugging Face para la diarización.", None, gr.update()
+        # No devolvemos un error, pero la diarización será omitida.
 
     # --- 1. Carga de Modelo y Audio ---
     transcription_model = get_model(model_name)
     if transcription_model is None:
-        return f"Error: No se pudo cargar el modelo de transcripción '{model_name}'.", None, gr.update()
+        error_msg = f"Error: No se pudo cargar el modelo de transcripción '{model_name}'."
+        gr.Error(error_msg)
+        return error_msg, None
 
     try:
         gr.Info(f"Cargando audio desde: {audio_path}")
         audio = whisperx.load_audio(audio_path)
     except Exception as e:
-        return f"Error al cargar el archivo de audio: {e}", None, gr.update()
+        error_msg = f"Error al cargar el archivo de audio: {e}"
+        gr.Error(error_msg)
+        return error_msg, None
 
     # --- 2. Transcripción ---
     gr.Info(f"Transcribiendo con el modelo '{model_name}' en idioma '{language_code}'...")
     result = transcription_model.transcribe(audio, batch_size=16, language=language_code)
 
-    # --- 3. Alineación de Marcas de Tiempo ---
-    gr.Info("Alineando marcas de tiempo...")
+    # --- 3. Alineación de Marcas de Tiempo (si es posible) ---
     try:
+        gr.Info("Alineando marcas de tiempo...")
         model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=DEVICE)
         result = whisperx.align(result["segments"], model_a, metadata, audio, DEVICE, return_char_alignments=False)
     except Exception as e:
-        gr.Warning(f"No se pudo realizar la alineación de marcas de tiempo para el idioma '{language_code}'. La transcripción continuará sin ella.")
-        pass # Continuar sin alineación si falla
+        gr.Warning(f"No se pudo alinear para el idioma '{language_code}'. Transcripción sin alineación detallada.")
+        pass
 
-    # --- 4. Diarización de Hablantes ---
-    gr.Info("Realizando diarización de hablantes...")
-    try:
-        diarize_model = whisperx.DiarizationPipeline(use_auth_token=HF_TOKEN, device=DEVICE)
-        diarize_segments = diarize_model(audio)
-        result = whisperx.assign_word_speakers(diarize_segments, result)
-    except Exception as e:
-        gr.Warning(f"Error durante la diarización: {e}. Se devolverá la transcripción sin hablantes.")
-        # Devolver transcripción sin hablantes si la diarización falla
-        final_transcription = " ".join([seg['text'].strip() for seg in result.get("segments", [])])
-        return final_transcription, audio_path, "Transcripción completada (falló la diarización)."
+    # --- 4. Diarización de Hablantes (si hay token) ---
+    if HF_TOKEN:
+        try:
+            gr.Info("Realizando diarización de hablantes...")
+            diarize_model = whisperx.DiarizationPipeline(use_auth_token=HF_TOKEN, device=DEVICE)
+            diarize_segments = diarize_model(audio)
+            result = whisperx.assign_word_speakers(diarize_segments, result)
+        except Exception as e:
+            gr.Warning(f"Error en diarización: {e}. Se omitirán los hablantes.")
+            # La transcripción continuará sin la información de hablantes
 
     # --- 5. Formateo de la Salida ---
     if "segments" not in result or not result["segments"]:
-        return "La transcripción no produjo segmentos.", audio_path, "Completado."
+        gr.Warning("La transcripción no produjo segmentos.")
+        return "La transcripción no produjo segmentos.", audio_path
 
-    final_transcription = format_transcription_with_speakers(result)
+    # Si la diarización falló o se omitió, 'speaker' no estará en los segmentos
+    if "speaker" in result["segments"][0]:
+        final_transcription = format_transcription_with_speakers(result)
+        gr.Info(f"Transcripción y diarización con '{model_name}' completada.")
+    else:
+        final_transcription = " ".join([seg['text'].strip() for seg in result.get("segments", [])])
+        gr.Info(f"Transcripción con '{model_name}' completada (sin diarización).")
 
-    status_message = f"Transcripción y diarización con '{model_name}' completada."
-    gr.Info(status_message)
-
-    return final_transcription, audio_path, status_message
+    return final_transcription, audio_path
