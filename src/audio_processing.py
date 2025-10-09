@@ -1,123 +1,132 @@
-# --- 1. INSTALACIONES E IMPORTACIONES ---
-from faster_whisper import WhisperModel
-import gradio as gr
-from resemblyzer import VoiceEncoder
-import numpy as np
-import librosa
-from sklearn.cluster import DBSCAN
+import whisperx
 import torch
+import os
+import gradio as gr
+from datetime import timedelta
 
-# --- 2. CARGA DE MODELOS ---
+# --- 1. CONFIGURACIÓN ---
 
-# Determina el dispositivo a usar
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 COMPUTE_TYPE = "float16" if torch.cuda.is_available() else "int8"
+HF_TOKEN = os.environ.get("HF_TOKEN")
 
-# Diccionario para cachear los modelos de transcripción
-transcription_models_cache = {}
+# Cache para los modelos
+model_cache = {}
 
-def get_transcription_model(model_name="base"):
-    """
-    Carga un modelo de Whisper si no está en caché y lo devuelve.
-    """
-    if model_name not in transcription_models_cache:
+def get_model(model_name):
+    """Carga y cachea los modelos de WhisperX."""
+    if model_name not in model_cache:
         print(f"Cargando modelo de transcripción: {model_name}...")
         try:
-            model = WhisperModel(model_name, device=DEVICE, compute_type=COMPUTE_TYPE)
-            transcription_models_cache[model_name] = model
+            model = whisperx.load_model(model_name, DEVICE, compute_type=COMPUTE_TYPE)
+            model_cache[model_name] = model
             print(f"Modelo '{model_name}' cargado.")
         except Exception as e:
             print(f"Error al cargar el modelo '{model_name}': {e}")
-            # Devolver el modelo base como fallback si existe, o None
-            return transcription_models_cache.get("base")
-    return transcription_models_cache[model_name]
+            return None
+    return model_cache[model_name]
 
-# Cargar el modelo por defecto al iniciar
-get_transcription_model("base")
+# --- 2. FUNCIONES AUXILIARES ---
 
-# Cargar encoder de voces. Es recomendable usar CPU para evitar conflictos de VRAM.
-print("Cargando modelo de codificación de voz...")
-voice_encoder = VoiceEncoder(device="cpu")
-print("Modelo de codificación de voz cargado.")
+def format_timestamp(seconds):
+    """Convierte segundos a un formato de tiempo HH:MM:SS.ms."""
+    td = timedelta(seconds=seconds)
+    # Formato para asegurar dos dígitos en horas, minutos y segundos
+    total_seconds = int(td.total_seconds())
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    milliseconds = td.microseconds // 1000
+    return f"{hours:02}:{minutes:02}:{seconds:02}.{milliseconds:03}"
+
+def format_transcription_with_speakers(result):
+    """Formatea la transcripción con hablantes y marcas de tiempo."""
+    lines = []
+    current_speaker = None
+    text_buffer = ""
+    start_time = ""
+
+    for segment in result["segments"]:
+        speaker = segment.get("speaker", "DESCONOCIDO")
+
+        if speaker != current_speaker:
+            if current_speaker is not None:
+                # Escribir el buffer del hablante anterior
+                lines.append(f"**{current_speaker} ({start_time} - {end_time}):** {text_buffer.strip()}")
+
+            # Iniciar nuevo hablante
+            current_speaker = speaker
+            start_time = format_timestamp(segment['start'])
+            text_buffer = ""
+
+        text_buffer += segment['text'].strip() + " "
+        end_time = format_timestamp(segment['end'])
+
+    # Escribir el último buffer
+    if current_speaker is not None:
+        lines.append(f"**{current_speaker} ({start_time} - {end_time}):** {text_buffer.strip()}")
+
+    return "\n\n".join(lines)
 
 
-# --- 4. FUNCIÓN PRINCIPAL DE PROCESAMIENTO ---
+# --- 3. FUNCIÓN PRINCIPAL DE PROCESAMIENTO ---
 
-def transcribir_con_diarizacion(audio_path, model_name="base"):
+def transcribir_con_diarizacion(audio_path, model_name="base", language_code="es"):
     """
-    Transcribe un archivo de audio y realiza diarización de hablantes.
-    Devuelve la transcripción y la ruta del archivo de audio.
+    Transcribe un archivo de audio usando WhisperX para obtener marcas de tiempo
+    a nivel de palabra y realiza diarización de hablantes.
     """
     if audio_path is None:
-        return "No se recibió audio. Por favor, graba algo.", None, gr.update()
+        return "No se recibió audio. Por favor, graba o sube algo.", None, gr.update()
 
-    # Obtener el modelo de transcripción seleccionado
-    transcription_model = get_transcription_model(model_name)
+    # --- Validación del token de Hugging Face ---
+    if not HF_TOKEN:
+        gr.Warning("No se ha configurado el token de Hugging Face (HF_TOKEN). La diarización no funcionará.")
+        # Se puede continuar sin diarización, pero por ahora se devuelve un error claro.
+        return "Error: Falta el token de Hugging Face para la diarización.", None, gr.update()
+
+    # --- 1. Carga de Modelo y Audio ---
+    transcription_model = get_model(model_name)
     if transcription_model is None:
         return f"Error: No se pudo cargar el modelo de transcripción '{model_name}'.", None, gr.update()
 
-    # 1️⃣ Cargar audio UNA SOLA VEZ
     try:
-        wav, sr = librosa.load(audio_path, sr=16000)
+        gr.Info(f"Cargando audio desde: {audio_path}")
+        audio = whisperx.load_audio(audio_path)
     except Exception as e:
         return f"Error al cargar el archivo de audio: {e}", None, gr.update()
 
-    # 2️⃣ Transcripción con Whisper
-    status_update = f"Transcribiendo con el modelo '{model_name}'..."
-    # A status_update a gr.Info() for better visibility
-    gr.Info(status_update)
+    # --- 2. Transcripción ---
+    gr.Info(f"Transcribiendo con el modelo '{model_name}' en idioma '{language_code}'...")
+    result = transcription_model.transcribe(audio, batch_size=16, language=language_code)
 
+    # --- 3. Alineación de Marcas de Tiempo ---
+    gr.Info("Alineando marcas de tiempo...")
+    try:
+        model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=DEVICE)
+        result = whisperx.align(result["segments"], model_a, metadata, audio, DEVICE, return_char_alignments=False)
+    except Exception as e:
+        gr.Warning(f"No se pudo realizar la alineación de marcas de tiempo para el idioma '{language_code}'. La transcripción continuará sin ella.")
+        pass # Continuar sin alineación si falla
 
-    segments_generator, info = transcription_model.transcribe(wav, language="es", word_timestamps=True)
-    segments = list(segments_generator)
+    # --- 4. Diarización de Hablantes ---
+    gr.Info("Realizando diarización de hablantes...")
+    try:
+        diarize_model = whisperx.DiarizationPipeline(use_auth_token=HF_TOKEN, device=DEVICE)
+        diarize_segments = diarize_model(audio)
+        result = whisperx.assign_word_speakers(diarize_segments, result)
+    except Exception as e:
+        gr.Warning(f"Error durante la diarización: {e}. Se devolverá la transcripción sin hablantes.")
+        # Devolver transcripción sin hablantes si la diarización falla
+        final_transcription = " ".join([seg['text'].strip() for seg in result.get("segments", [])])
+        return final_transcription, audio_path, "Transcripción completada (falló la diarización)."
 
-    if not segments:
-        return "No se pudo transcribir el audio (posiblemente silencio).", audio_path, f"Transcripción con '{model_name}' completada."
+    # --- 5. Formateo de la Salida ---
+    if "segments" not in result or not result["segments"]:
+        return "La transcripción no produjo segmentos.", audio_path, "Completado."
 
-    # 3️⃣ Extraer embeddings de voz de cada segmento
-    embeddings = []
-    valid_segments = []
-    for seg in segments:
-        start_sample = int(seg.start * sr)
-        end_sample = int(seg.end * sr)
-        segment_wav = wav[start_sample:end_sample]
+    final_transcription = format_transcription_with_speakers(result)
 
-        if len(segment_wav) < 400:
-            continue
+    status_message = f"Transcripción y diarización con '{model_name}' completada."
+    gr.Info(status_message)
 
-        try:
-            emb = voice_encoder.embed_utterance(segment_wav)
-            embeddings.append(emb)
-            valid_segments.append(seg)
-        except Exception as e:
-            print(f"No se pudo procesar el segmento de {seg.start} a {seg.end}: {e}")
-
-    if not valid_segments:
-        return " ".join([s.text for s in segments]), audio_path, f"Transcripción con '{model_name}' completada (sin diarización)."
-
-    # 4️⃣ Clustering de hablantes
-    embeddings = np.array(embeddings)
-    clustering = DBSCAN(eps=0.5, min_samples=1, metric="cosine").fit(embeddings)
-    labels = clustering.labels_
-
-    # 5️⃣ Construir la transcripción final
-    transcripcion = ""
-    current_speaker_label = -1
-    current_text = ""
-
-    for i, seg in enumerate(valid_segments):
-        speaker_label = labels[i]
-
-        if speaker_label != current_speaker_label and current_speaker_label != -1:
-            speaker_name = f"Hablante {current_speaker_label + 1}"
-            transcripcion += f"**{speaker_name}:** {current_text.strip()}\\n\\n"
-            current_text = ""
-
-        current_speaker_label = speaker_label
-        current_text += " " + seg.text
-
-    if current_speaker_label != -1:
-        speaker_name = f"Hablante {current_speaker_label + 1}"
-        transcripcion += f"**{speaker_name}:** {current_text.strip()}\\n\\n"
-
-    return transcripcion.strip(), audio_path, f"Transcripción y diarización con '{model_name}' completada."
+    return final_transcription, audio_path, status_message

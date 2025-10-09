@@ -8,167 +8,170 @@ from src.file_management import (
     rename_library_item,
     delete_from_library,
     move_library_item,
-    update_all_views,
-    handle_folder_selection,
-    handle_library_selection,
-    navigate_up,
+    get_all_directories,
+    get_folder_items,
+    handle_folder_change,
+    handle_file_selection,
 )
 
-# --- INTERFAZ DE GRADIO ---
+# --- LISTAS Y VARIABLES GLOBALES ---
+SUPPORTED_LANGUAGES = {
+    "Español": "es", "Inglés": "en", "Portugués": "pt", "Francés": "fr",
+    "Alemán": "de", "Italiano": "it", "Japonés": "ja", "Chino": "zh",
+}
 
+# --- INTERFAZ DE GRADIO ---
 with gr.Blocks(theme=gr.themes.Soft()) as demo:
-    # --- Estados ---
+    # --- ESTADOS ---
     processed_audio_path_state = gr.State(value=None)
     current_path_state = gr.State(value=".")
 
     with gr.Row():
         with gr.Sidebar():
-            gr.Markdown("## 📂 Carpetas")
+            gr.Markdown("## 📂 Navegación")
             with gr.Row():
                 new_folder_name_sidebar = gr.Textbox(label="Nueva Carpeta", placeholder="Nombre...", scale=3, lines=1)
                 create_folder_button_sidebar = gr.Button("➕", scale=1)
 
-            up_button = gr.Button("⬆️ Subir a la carpeta padre")
-            folder_browser = gr.Radio(label="Navegar por carpetas", choices=[], interactive=True)
+            folder_selector_sidebar = gr.Dropdown(
+                label="Seleccionar Carpeta",
+                choices=get_all_directories(),
+                value=".",
+                interactive=True
+            )
             refresh_button = gr.Button("🔄 Refrescar Vistas")
 
         with gr.Column():
-            status_box = gr.Textbox(label="ℹ️ Estado", lines=1, interactive=False)
-
             with gr.Tabs() as tabs:
                 with gr.TabItem("🎙️ Principal", id=0):
-                    gr.Markdown("## Transcripción y Diarización")
-                    gr.Markdown("Graba o sube una conversación para transcribir y agrupar por hablante.")
-
-                    model_selector = gr.Dropdown(
-                        ["tiny", "base", "small", "medium", "large", "large-v2", "large-v3", "distil-large-v2"],
-                        label="🤖 Modelo de Whisper",
-                        value="base",
-                        info="Modelos más grandes son más precisos pero más lentos."
-                    )
-
-                    audio_input = gr.Audio(sources=["microphone", "upload"], type="filepath", label="🎤 Graba o sube tu audio aquí")
-
+                    gr.Markdown("## Transcripción y Diarización con WhisperX")
                     with gr.Row():
+                        model_selector = gr.Dropdown(
+                            ["tiny", "base", "small", "medium", "large-v2", "large-v3"],
+                            label="🤖 Modelo", value="base"
+                        )
+                        language_selector = gr.Dropdown(
+                            list(SUPPORTED_LANGUAGES.keys()),
+                            label="🗣️ Idioma", value="Español"
+                        )
+                    audio_input = gr.Audio(sources=["microphone", "upload"], type="filepath", label="🎤 Graba o sube tu audio")
+                    with gr.Row():
+                        transcribe_button = gr.Button("🚀 Transcribir", variant="primary")
                         transcribe_again_button = gr.Button("🔄 Transcribir de Nuevo")
-
-                    text_box = gr.Textbox(label="📝 Transcripción", lines=10, interactive=False)
-
+                    text_box = gr.Textbox(label="📝 Transcripción", lines=15, interactive=False, show_copy_button=True)
                     with gr.Row():
-                        save_folder_dropdown = gr.Dropdown(label="Guardar en...", choices=[], interactive=True, scale=3)
+                        save_folder_dropdown = gr.Dropdown(label="Guardar en...", choices=get_all_directories(), interactive=True, scale=3)
                         save_button = gr.Button("💾 Guardar", scale=1)
 
                 with gr.TabItem("🗂️ Archivos", id=1):
-                    gr.Markdown("## Gestión de Archivos")
-                    current_path_display = gr.Textbox(label="Ruta Actual", value=".", interactive=False)
-                    library_browser = gr.Radio(label="Contenido de la Carpeta Actual", choices=[], interactive=True)
-
+                    gr.Markdown("## Gestión de Archivos de Audio")
+                    library_browser = gr.Radio(
+                        label="Contenido de la Carpeta Actual",
+                        choices=get_folder_items(),
+                        interactive=True
+                    )
                     with gr.Row():
                         new_name_input = gr.Textbox(label="Nuevo nombre", placeholder="Escribe y presiona 'Renombrar'", scale=3)
                         rename_button = gr.Button("✏️ Renombrar", scale=1)
-
                     delete_button = gr.Button("🗑️ Eliminar Seleccionado")
-
                     with gr.Row():
-                        destination_folder_dropdown = gr.Dropdown(label="Mover a...", choices=[], interactive=True, scale=3)
+                        destination_folder_dropdown = gr.Dropdown(label="Mover a...", choices=get_all_directories(), interactive=True, scale=3)
                         move_button = gr.Button("🚚 Mover", scale=1)
 
                 with gr.TabItem("👁️ Visualizador", id=2):
                     gr.Markdown("## Visualizador de Audio Guardado")
                     selected_audio_player = gr.Audio(label="Audio Seleccionado", type="filepath", interactive=False)
-                    selected_transcription_display = gr.Textbox(label="Transcripción Guardada", lines=15, interactive=False)
+                    selected_transcription_display = gr.Textbox(label="Transcripción Guardada", lines=15, interactive=False, show_copy_button=True)
 
-    # --- Lógica de la Interfaz ---
+    # --- LÓGICA DE LA INTERFAZ ---
+    def on_transcribe(audio, model, lang_key):
+        lang_code = SUPPORTED_LANGUAGES.get(lang_key, "es")
+        # La función de backend ahora solo devuelve la transcripción y la ruta del audio
+        transcription, audio_path = transcribir_con_diarizacion(audio, model, lang_code)
+        return transcription, audio_path
 
-    # Salidas comunes para refrescar la UI
-    ui_refresh_outputs = [
-        status_box,
-        folder_browser,
-        library_browser,
-        current_path_display,
-        destination_folder_dropdown,
-        save_folder_dropdown
-    ]
-
-    # Carga inicial
-    demo.load(
-        fn=update_all_views,
-        inputs=current_path_state,
-        outputs=ui_refresh_outputs
+    transcribe_button.click(
+        fn=on_transcribe,
+        inputs=[audio_input, model_selector, language_selector],
+        outputs=[text_box, processed_audio_path_state]
     )
-
-    # --- Eventos de la Barra Lateral ---
-    create_folder_button_sidebar.click(
-        fn=create_folder_in_library,
-        inputs=[current_path_state, new_folder_name_sidebar],
-        outputs=ui_refresh_outputs + [new_folder_name_sidebar]
-    )
-
-    folder_browser.change(
-        fn=handle_folder_selection,
-        inputs=[folder_browser, current_path_state],
-        outputs=[current_path_state, library_browser, current_path_display]
-    )
-
-    up_button.click(
-        fn=navigate_up,
-        inputs=[current_path_state],
-        outputs=[current_path_state] + ui_refresh_outputs
-    )
-
-    refresh_button.click(
-        fn=update_all_views,
-        inputs=[current_path_state],
-        outputs=ui_refresh_outputs
-    )
-
-    # --- Eventos de la Pestaña Principal ---
-    audio_input.change(
-        fn=transcribir_con_diarizacion,
-        inputs=[audio_input, model_selector],
-        outputs=[text_box, processed_audio_path_state, status_box]
-    )
-
     transcribe_again_button.click(
-        fn=transcribir_con_diarizacion,
-        inputs=[processed_audio_path_state, model_selector],
-        outputs=[text_box, processed_audio_path_state, status_box]
+        fn=on_transcribe,
+        inputs=[processed_audio_path_state, model_selector, language_selector],
+        outputs=[text_box, processed_audio_path_state]
     )
 
     save_button.click(
         fn=save_to_library,
         inputs=[save_folder_dropdown, processed_audio_path_state, text_box],
-        outputs=[status_box, library_browser]
+        outputs=[library_browser]
     )
 
-    # --- Eventos de la Pestaña Archivos ---
+    folder_selector_sidebar.change(
+        fn=handle_folder_change,
+        inputs=[folder_selector_sidebar],
+        outputs=[current_path_state, library_browser]
+    )
+
     library_browser.change(
-        fn=handle_library_selection,
+        fn=handle_file_selection,
         inputs=[library_browser, current_path_state],
-        outputs=[current_path_state, selected_audio_player, selected_transcription_display, tabs]
+        outputs=[current_path_state, library_browser, selected_audio_player, selected_transcription_display, tabs]
+    )
+
+    def on_create_folder(current_path, new_folder):
+        folder_list_update, new_name_update = create_folder_in_library(current_path, new_folder)
+        return folder_list_update, folder_list_update, folder_list_update, new_name_update
+
+    create_folder_button_sidebar.click(
+        fn=on_create_folder,
+        inputs=[current_path_state, new_folder_name_sidebar],
+        outputs=[folder_selector_sidebar, save_folder_dropdown, destination_folder_dropdown, new_folder_name_sidebar]
     )
 
     rename_button.click(
         fn=rename_library_item,
         inputs=[current_path_state, library_browser, new_name_input],
-        outputs=ui_refresh_outputs + [new_name_input]
+        outputs=[library_browser, new_name_input]
     )
 
     delete_button.click(
         fn=delete_from_library,
         inputs=[current_path_state, library_browser],
-        outputs=ui_refresh_outputs + [selected_audio_player, selected_transcription_display]
+        outputs=[library_browser, selected_audio_player, selected_transcription_display]
     )
 
     move_button.click(
         fn=move_library_item,
         inputs=[current_path_state, library_browser, destination_folder_dropdown],
-        outputs=ui_refresh_outputs
+        outputs=[library_browser]
     )
 
+    def refresh_all_views(current_path):
+        all_dirs = get_all_directories()
+        current_items = get_folder_items(current_path)
+        return (
+            gr.update(choices=all_dirs),
+            gr.update(choices=all_dirs),
+            gr.update(choices=all_dirs),
+            gr.update(choices=current_items)
+        )
+
+    refresh_button.click(
+        fn=refresh_all_views,
+        inputs=[current_path_state],
+        outputs=[folder_selector_sidebar, save_folder_dropdown, destination_folder_dropdown, library_browser]
+    )
 
 if __name__ == "__main__":
-    # Crear el directorio de la biblioteca si no existe
     if not os.path.exists(AUDIO_LIBRARY_PATH):
         os.makedirs(AUDIO_LIBRARY_PATH)
-    demo.launch(share=True, debug=True)
+    if not os.environ.get("HF_TOKEN"):
+        print("\n" + "="*80)
+        print("AVISO: La variable de entorno HF_TOKEN no está configurada.")
+        print("La diarización de hablantes no funcionará.")
+        print("1. Ve a https://huggingface.co/settings/tokens para crear un token.")
+        print("2. Acepta los términos de 'pyannote/speaker-diarization-3.1' y 'pyannote/segmentation-3.0'.")
+        print("3. Configura la variable de entorno: export HF_TOKEN='tu_token_aqui'")
+        print("="*80 + "\n")
+    demo.launch(share=False, debug=True)
