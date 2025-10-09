@@ -175,4 +175,4 @@ if __name__ == "__main__":
         print("- pyannote/speaker-diarization-3.1")
         print("- pyannote/segmentation-3.0")
         print("="*80 + "\n")
-    demo.launch(share=False, debug=True)
+    demo.launch(share=True, debug=True)
