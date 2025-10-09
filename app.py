@@ -3,144 +3,167 @@ import os
 from src.audio_processing import transcribir_con_diarizacion
 from src.file_management import (
     AUDIO_LIBRARY_PATH,
-    update_library_browser,
     create_folder_in_library,
     save_to_library,
     rename_library_item,
     delete_from_library,
+    move_library_item,
+    update_all_views,
+    handle_folder_selection,
     handle_library_selection,
     navigate_up,
-    move_library_item,
-    get_all_directories,
 )
 
 # --- INTERFAZ DE GRADIO ---
 
 with gr.Blocks(theme=gr.themes.Soft()) as demo:
-    # Estado para almacenar la ruta del último audio procesado
+    # --- Estados ---
     processed_audio_path_state = gr.State(value=None)
+    current_path_state = gr.State(value=".")
 
     with gr.Row():
         with gr.Sidebar():
-            gr.Markdown("## 📚 Biblioteca de Audios")
-
-            # Estado para la ruta actual en la biblioteca
-            current_path_state = gr.State(value=".")
-
-            # UI para la creación de carpetas
+            gr.Markdown("## 📂 Carpetas")
             with gr.Row():
-                new_folder_name = gr.Textbox(label="Nombre de la Carpeta", placeholder="Escribe y presiona Enter...", scale=3)
-                create_folder_button = gr.Button("➕ Crear Carpeta", scale=1)
+                new_folder_name_sidebar = gr.Textbox(label="Nueva Carpeta", placeholder="Nombre...", scale=3, lines=1)
+                create_folder_button_sidebar = gr.Button("➕", scale=1)
 
-            # UI para la navegación
-            with gr.Row():
-                up_button = gr.Button("⬆️ Subir")
-                refresh_button = gr.Button("🔄 Refrescar")
-
-            current_path_display = gr.Textbox(label="Ruta Actual", value=".", interactive=False)
-
-            # Lista de archivos y carpetas
-            library_browser = gr.Radio(label="Contenido", choices=[], interactive=True)
-
-            # Controles de mover
-            with gr.Row():
-                destination_folder_dropdown = gr.Dropdown(label="Mover a...", choices=get_all_directories(), scale=3)
-                move_button = gr.Button("🚚 Mover", scale=1)
-
-            # Controles de renombrar y eliminar
-            with gr.Row():
-                new_name_input = gr.Textbox(label="Nuevo nombre", placeholder="Nuevo nombre para el item...", scale=3)
-                rename_button = gr.Button("✏️ Renombrar", scale=1)
-            delete_button = gr.Button("🗑️ Eliminar Seleccionado")
-
-            # Reproductor de audio
-            selected_audio_player = gr.Audio(label="Audio Seleccionado", type="filepath")
+            up_button = gr.Button("⬆️ Subir a la carpeta padre")
+            folder_browser = gr.Radio(label="Navegar por carpetas", choices=[], interactive=True)
+            refresh_button = gr.Button("🔄 Refrescar Vistas")
 
         with gr.Column():
-            gr.Markdown("## 🎙️ Transcriptor con Diarización (Resemblyzer + DBSCAN)")
-            gr.Markdown("Graba una conversación. El sistema transcribirá y agrupará los segmentos por hablante.")
-
-            # Selección de modelo
-            model_selector = gr.Radio(
-                ["tiny", "base", "small", "medium", "large"],
-                label="🤖 Modelo de Whisper",
-                value="base",
-                info="Modelos más grandes son más precisos pero más lentos."
-            )
-
-            audio_input = gr.Audio(sources=["microphone", "upload"], type="filepath", label="🎤 Graba o sube tu audio aquí")
-            text_box = gr.Textbox(label="📝 Transcripción", lines=15, interactive=False)
-
-            with gr.Row():
-                save_button = gr.Button("💾 Guardar en la Biblioteca")
-
             status_box = gr.Textbox(label="ℹ️ Estado", lines=1, interactive=False)
+
+            with gr.Tabs() as tabs:
+                with gr.TabItem("🎙️ Principal", id=0):
+                    gr.Markdown("## Transcripción y Diarización")
+                    gr.Markdown("Graba o sube una conversación para transcribir y agrupar por hablante.")
+
+                    model_selector = gr.Dropdown(
+                        ["tiny", "base", "small", "medium", "large", "large-v2", "large-v3", "distil-large-v2"],
+                        label="🤖 Modelo de Whisper",
+                        value="base",
+                        info="Modelos más grandes son más precisos pero más lentos."
+                    )
+
+                    audio_input = gr.Audio(sources=["microphone", "upload"], type="filepath", label="🎤 Graba o sube tu audio aquí")
+
+                    with gr.Row():
+                        transcribe_again_button = gr.Button("🔄 Transcribir de Nuevo")
+
+                    text_box = gr.Textbox(label="📝 Transcripción", lines=10, interactive=False)
+
+                    with gr.Row():
+                        save_folder_dropdown = gr.Dropdown(label="Guardar en...", choices=[], interactive=True, scale=3)
+                        save_button = gr.Button("💾 Guardar", scale=1)
+
+                with gr.TabItem("🗂️ Archivos", id=1):
+                    gr.Markdown("## Gestión de Archivos")
+                    current_path_display = gr.Textbox(label="Ruta Actual", value=".", interactive=False)
+                    library_browser = gr.Radio(label="Contenido de la Carpeta Actual", choices=[], interactive=True)
+
+                    with gr.Row():
+                        new_name_input = gr.Textbox(label="Nuevo nombre", placeholder="Escribe y presiona 'Renombrar'", scale=3)
+                        rename_button = gr.Button("✏️ Renombrar", scale=1)
+
+                    delete_button = gr.Button("🗑️ Eliminar Seleccionado")
+
+                    with gr.Row():
+                        destination_folder_dropdown = gr.Dropdown(label="Mover a...", choices=[], interactive=True, scale=3)
+                        move_button = gr.Button("🚚 Mover", scale=1)
+
+                with gr.TabItem("👁️ Visualizador", id=2):
+                    gr.Markdown("## Visualizador de Audio Guardado")
+                    selected_audio_player = gr.Audio(label="Audio Seleccionado", type="filepath", interactive=False)
+                    selected_transcription_display = gr.Textbox(label="Transcripción Guardada", lines=15, interactive=False)
 
     # --- Lógica de la Interfaz ---
 
-    # Cargar el contenido inicial de la biblioteca
-    demo.load(update_library_browser, outputs=[library_browser, current_path_display])
+    # Salidas comunes para refrescar la UI
+    ui_refresh_outputs = [
+        status_box,
+        folder_browser,
+        library_browser,
+        current_path_display,
+        destination_folder_dropdown,
+        save_folder_dropdown
+    ]
 
-    # Conexiones de eventos de la transcripción principal
-    audio_input.change(
-        transcribir_con_diarizacion,
-        inputs=[audio_input, model_selector],
-        outputs=[text_box, processed_audio_path_state, status_box]
-    )
-    save_button.click(
-        save_to_library,
-        inputs=[current_path_state, processed_audio_path_state, text_box],
-        outputs=[status_box]
-    ).then(
-        update_library_browser,
-        inputs=[current_path_state],
-        outputs=[library_browser, current_path_display]
+    # Carga inicial
+    demo.load(
+        fn=update_all_views,
+        inputs=current_path_state,
+        outputs=ui_refresh_outputs
     )
 
-    # Conexiones de la biblioteca
-    create_folder_button.click(
-        create_folder_in_library,
-        inputs=[current_path_state, new_folder_name],
-        outputs=[status_box, library_browser, current_path_display, new_folder_name]
-    ).then(
-        get_all_directories,
-        outputs=destination_folder_dropdown
+    # --- Eventos de la Barra Lateral ---
+    create_folder_button_sidebar.click(
+        fn=create_folder_in_library,
+        inputs=[current_path_state, new_folder_name_sidebar],
+        outputs=ui_refresh_outputs + [new_folder_name_sidebar]
     )
 
-    move_button.click(
-        move_library_item,
-        inputs=[current_path_state, library_browser, destination_folder_dropdown],
-        outputs=[status_box, library_browser, current_path_display, destination_folder_dropdown]
+    folder_browser.change(
+        fn=handle_folder_selection,
+        inputs=[folder_browser, current_path_state],
+        outputs=[current_path_state, library_browser, current_path_display]
     )
 
     up_button.click(
-        navigate_up,
+        fn=navigate_up,
         inputs=[current_path_state],
-        outputs=[current_path_state]
-    ).then(
-        update_library_browser,
-        inputs=[current_path_state],
-        outputs=[library_browser, current_path_display]
+        outputs=[current_path_state] + ui_refresh_outputs
     )
 
-    refresh_button.click(update_library_browser, inputs=[current_path_state], outputs=[library_browser, current_path_display])
+    refresh_button.click(
+        fn=update_all_views,
+        inputs=[current_path_state],
+        outputs=ui_refresh_outputs
+    )
 
+    # --- Eventos de la Pestaña Principal ---
+    audio_input.change(
+        fn=transcribir_con_diarizacion,
+        inputs=[audio_input, model_selector],
+        outputs=[text_box, processed_audio_path_state, status_box]
+    )
+
+    transcribe_again_button.click(
+        fn=transcribir_con_diarizacion,
+        inputs=[processed_audio_path_state, model_selector],
+        outputs=[text_box, processed_audio_path_state, status_box]
+    )
+
+    save_button.click(
+        fn=save_to_library,
+        inputs=[save_folder_dropdown, processed_audio_path_state, text_box],
+        outputs=[status_box, library_browser]
+    )
+
+    # --- Eventos de la Pestaña Archivos ---
     library_browser.change(
-        handle_library_selection,
+        fn=handle_library_selection,
         inputs=[library_browser, current_path_state],
-        outputs=[current_path_state, selected_audio_player, text_box, library_browser, current_path_display]
+        outputs=[current_path_state, selected_audio_player, selected_transcription_display, tabs]
     )
 
     rename_button.click(
-        rename_library_item,
+        fn=rename_library_item,
         inputs=[current_path_state, library_browser, new_name_input],
-        outputs=[status_box, library_browser, current_path_display, new_name_input]
+        outputs=ui_refresh_outputs + [new_name_input]
     )
 
     delete_button.click(
-        delete_from_library,
+        fn=delete_from_library,
         inputs=[current_path_state, library_browser],
-        outputs=[status_box, library_browser, current_path_display, selected_audio_player, text_box]
+        outputs=ui_refresh_outputs + [selected_audio_player, selected_transcription_display]
+    )
+
+    move_button.click(
+        fn=move_library_item,
+        inputs=[current_path_state, library_browser, destination_folder_dropdown],
+        outputs=ui_refresh_outputs
     )
 
 
