@@ -9,7 +9,9 @@ from src.file_management import (
     rename_library_item,
     delete_from_library,
     handle_library_selection,
-    navigate_up
+    navigate_up,
+    move_library_item,
+    get_all_directories,
 )
 
 # --- INTERFAZ DE GRADIO ---
@@ -40,6 +42,11 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
             # Lista de archivos y carpetas
             library_browser = gr.Radio(label="Contenido", choices=[], interactive=True)
 
+            # Controles de mover
+            with gr.Row():
+                destination_folder_dropdown = gr.Dropdown(label="Mover a...", choices=get_all_directories(), scale=3)
+                move_button = gr.Button("🚚 Mover", scale=1)
+
             # Controles de renombrar y eliminar
             with gr.Row():
                 new_name_input = gr.Textbox(label="Nuevo nombre", placeholder="Nuevo nombre para el item...", scale=3)
@@ -52,6 +59,14 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         with gr.Column():
             gr.Markdown("## 🎙️ Transcriptor con Diarización (Resemblyzer + DBSCAN)")
             gr.Markdown("Graba una conversación. El sistema transcribirá y agrupará los segmentos por hablante.")
+
+            # Selección de modelo
+            model_selector = gr.Radio(
+                ["tiny", "base", "small", "medium", "large"],
+                label="🤖 Modelo de Whisper",
+                value="base",
+                info="Modelos más grandes son más precisos pero más lentos."
+            )
 
             audio_input = gr.Audio(sources=["microphone", "upload"], type="filepath", label="🎤 Graba o sube tu audio aquí")
             text_box = gr.Textbox(label="📝 Transcripción", lines=15, interactive=False)
@@ -67,7 +82,11 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
     demo.load(update_library_browser, outputs=[library_browser, current_path_display])
 
     # Conexiones de eventos de la transcripción principal
-    audio_input.change(transcribir_con_diarizacion, inputs=audio_input, outputs=[text_box, processed_audio_path_state])
+    audio_input.change(
+        transcribir_con_diarizacion,
+        inputs=[audio_input, model_selector],
+        outputs=[text_box, processed_audio_path_state, status_box]
+    )
     save_button.click(
         save_to_library,
         inputs=[current_path_state, processed_audio_path_state, text_box],
@@ -83,6 +102,15 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         create_folder_in_library,
         inputs=[current_path_state, new_folder_name],
         outputs=[status_box, library_browser, current_path_display, new_folder_name]
+    ).then(
+        get_all_directories,
+        outputs=destination_folder_dropdown
+    )
+
+    move_button.click(
+        move_library_item,
+        inputs=[current_path_state, library_browser, destination_folder_dropdown],
+        outputs=[status_box, library_browser, current_path_display, destination_folder_dropdown]
     )
 
     up_button.click(

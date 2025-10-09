@@ -53,6 +53,78 @@ def create_folder_in_library(current_path, new_folder):
     else:
         return f"La carpeta '{new_folder}' ya existe.", gr.update(), gr.update(), gr.update()
 
+
+def get_all_directories(root=AUDIO_LIBRARY_PATH):
+    """
+    Recursively gets all directory paths within the audio library.
+    Returns paths relative to the library root.
+    """
+    dirs = ["."]  # Incluir el directorio raíz
+    for dirpath, dirnames, _ in os.walk(root):
+        # Filtrar para evitar incluir el propio directorio raíz dos veces o subdirectorios problemáticos
+        if dirpath == root:
+            # Para el directorio raíz, procesamos solo sus subdirectorios
+            for dirname in dirnames:
+                dirs.append(dirname)
+        else:
+            # Para subdirectorios, construimos la ruta relativa
+            for dirname in dirnames:
+                full_path = os.path.join(dirpath, dirname)
+                relative_path = os.path.relpath(full_path, root)
+                dirs.append(relative_path)
+
+    # Asegurarse de que no haya duplicados y ordenar
+    return sorted(list(set(dirs)))
+
+
+def move_library_item(current_path, selection, destination_folder):
+    """Mueve un archivo seleccionado a otra carpeta."""
+    if not selection or selection.startswith("[C]"):
+        return "Por favor, selecciona un archivo (no una carpeta) para mover.", gr.update(), gr.update(), gr.update()
+
+    if not destination_folder:
+        return "Por favor, selecciona una carpeta de destino.", gr.update(), gr.update(), gr.update()
+
+    filename = selection
+    source_path_full = os.path.join(AUDIO_LIBRARY_PATH, current_path, filename)
+    destination_path_full = os.path.join(AUDIO_LIBRARY_PATH, destination_folder, filename)
+
+    if not os.path.exists(source_path_full):
+        return f"Error: El archivo '{filename}' no existe en la ubicación actual.", gr.update(), gr.update(), gr.update()
+    if os.path.exists(destination_path_full):
+        return f"Error: Ya existe un archivo con el nombre '{filename}' en la carpeta de destino.", gr.update(), gr.update(), gr.update()
+
+    try:
+        shutil.move(source_path_full, destination_path_full)
+    except Exception as e:
+        return f"Error al mover el archivo: {e}", gr.update(), gr.update(), gr.update()
+
+    # Actualizar metadatos
+    metadata = {}
+    if os.path.exists(METADATA_FILE):
+        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
+            try:
+                metadata = json.load(f)
+            except json.JSONDecodeError:
+                pass  # El archivo se sobreescribirá si está corrupto
+
+    old_metadata_key = os.path.normpath(os.path.join(current_path, filename))
+    new_metadata_key = os.path.normpath(os.path.join(destination_folder, filename))
+
+    if old_metadata_key in metadata:
+        metadata[new_metadata_key] = metadata.pop(old_metadata_key)
+
+    with open(METADATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, indent=4, ensure_ascii=False)
+
+    # Refrescar la vista actual de la biblioteca
+    browser_update, path_update = update_library_browser(current_path)
+    # También es útil actualizar las carpetas de destino por si se ha creado una nueva
+    destination_choices = get_all_directories()
+
+    return f"Archivo '{filename}' movido a '{destination_folder}'.", browser_update, path_update, gr.update(choices=destination_choices, value=None)
+
+
 def save_to_library(current_path, audio_path, transcription):
     """Guarda el audio y su transcripción en la ruta actual de la biblioteca."""
     if not audio_path or not transcription:
