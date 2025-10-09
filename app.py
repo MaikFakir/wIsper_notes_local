@@ -168,11 +168,9 @@ if __name__ == "__main__":
         os.makedirs(AUDIO_LIBRARY_PATH)
     if not HF_TOKEN:
         print("\n" + "="*80)
-        print("AVISO: El token de Hugging Face no se ha encontrado.")
+        print("AVISO: El token de Hugging Face (HF_TOKEN) no se ha encontrado en los Secrets de Google Colab.")
         print("La diarización de hablantes no funcionará.")
-        print("Para solucionarlo, puedes:")
-        print("  a) Crear un archivo llamado '.Hugging_Token' en la raíz del proyecto y pegar tu token dentro.")
-        print("  b) O bien, configurar la variable de entorno HF_TOKEN.")
+        print("Para solucionarlo, ve al panel de 'Secrets' (icono de la llave 🔑 a la izquierda) y crea un nuevo secreto con el nombre 'HF_TOKEN' y tu token como valor.")
         print("\nRecuerda aceptar los términos de los modelos en Hugging Face para que la diarización funcione:")
         print("- pyannote/speaker-diarization-3.1")
         print("- pyannote/segmentation-3.0")

@@ -3,6 +3,7 @@ import torch
 import os
 import gradio as gr
 from datetime import timedelta
+from google.colab import userdata
 
 # --- 1. CONFIGURACIÓN ---
 
@@ -10,19 +11,13 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 COMPUTE_TYPE = "float16" if torch.cuda.is_available() else "int8"
 
 def get_hf_token():
-    """Lee el token de Hugging Face desde el archivo .Hugging_Token o la variable de entorno."""
-    token_path = ".Hugging_Token"
-    # Primero, intenta leer desde el archivo
-    if os.path.exists(token_path):
-        with open(token_path, "r") as f:
-            token = f.read().strip()
-        if token:
-            # Establecer la variable de entorno para que otros módulos puedan usarla si es necesario
-            os.environ['HF_TOKEN'] = token
-            return token
-
-    # Si el archivo no existe o está vacío, intenta obtenerla de la variable de entorno
-    token = os.environ.get("HF_TOKEN")
+    """
+    Obtiene el token de Hugging Face desde los 'Secrets' de Google Colab.
+    Este script está diseñado para funcionar exclusivamente en Google Colab.
+    """
+    token = userdata.get('HF_TOKEN')
+    if not token:
+        print("Advertencia: No se encontró el secreto 'HF_TOKEN' en Google Colab. La diarización fallará.")
     return token
 
 HF_TOKEN = get_hf_token()
