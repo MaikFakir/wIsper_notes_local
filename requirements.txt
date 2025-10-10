@@ -4,17 +4,17 @@ torch==2.4.1+cu121
 torchaudio==2.4.1+cu121
 torchvision==0.19.1+cu121
 
-# --- WhisperX versión estable (sin requerir torch>=2.7) ---
+# --- WhisperX versión estable (no requiere torch>=2.7) ---
 whisperx==3.2.0
 
-# --- Dependencias del pipeline ---
-ctranslate2>=4.5.0
-faster-whisper>=1.1.1
+# --- Dependencias compatibles con WhisperX 3.2.0 ---
+faster-whisper==1.0.0
+ctranslate2>=4.0.0,<4.6.0
 pyannote.audio==3.1.1
-transformers>=4.40.0,<4.50.0
+transformers>=4.35.0,<4.46.0
+onnxruntime>=1.17.0,<1.20.0
 numpy>=1.25.0,<2.1.0
 pandas>=2.2.0,<2.3.0
-onnxruntime>=1.17.0,<1.20.0
 nltk>=3.8.0
 tqdm>=4.66.0
 av<16.0.0
