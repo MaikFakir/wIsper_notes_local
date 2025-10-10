@@ -1,7 +1,9 @@
-# --- Core ML/Audio Libraries ---
-# Let pip resolve the correct torch/torchaudio versions for the environment
+# --- Core ML/Audio Libraries for CUDA 12.1 ---
+# Forcing installation from PyTorch's CUDA 12.1 index to ensure GPU compatibility.
+--extra-index-url https://download.pytorch.org/whl/cu121
 torch
 torchaudio
+torchvision
 
 # --- WhisperX and its dependencies ---
 # Pinning to a stable release instead of the main branch
