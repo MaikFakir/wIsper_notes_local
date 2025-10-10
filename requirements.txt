@@ -1,35 +1,32 @@
-# --- PyTorch stack (CUDA 12.1, Colab Oct 2025) ---
+# --- PyTorch stack (CUDA 12.1 compatible con Colab GPU) ---
 --extra-index-url https://download.pytorch.org/whl/cu121
 torch==2.4.1+cu121
 torchaudio==2.4.1+cu121
 torchvision==0.19.1+cu121
 
-# --- WhisperX (última versión estable desde GitHub) ---
-git+https://github.com/m-bain/whisperX.git
+# --- WhisperX versión estable (sin requerir torch>=2.7) ---
+whisperx==3.2.0
 
-# --- Core dependencies ---
+# --- Dependencias del pipeline ---
 ctranslate2>=4.5.0
 faster-whisper>=1.1.1
-nltk>=3.9.1
-numpy>=2.0.2,<2.1.0
-onnxruntime>=1.19,<1.20.0
-pandas>=2.2.3,<2.3.0
+pyannote.audio==3.1.1
+transformers>=4.40.0,<4.50.0
+numpy>=1.25.0,<2.1.0
+pandas>=2.2.0,<2.3.0
+onnxruntime>=1.17.0,<1.20.0
+nltk>=3.8.0
+tqdm>=4.66.0
 av<16.0.0
-pyannote.audio>=3.3.2,<4.0.0
-transformers>=4.48.0
 
-# --- Audio/Video utilities ---
-librosa
-ffmpeg-python
-moviepy>=1.0.3
+# --- Audio / video / utilidades ---
+ffmpeg-python>=0.2.0
+librosa>=0.10.1
 pydub>=0.25.1
+moviepy>=1.0.3
 SpeechRecognition>=3.9.0
 
-# --- Optional local tools (no afectan Colab, pero útiles localmente) ---
-customtkinter==5.2.1     # Ignorado en Colab
-pyaudio==0.2.14           # Ignorado en Colab si no hay micrófono físico
-
-# --- Environment / API helpers ---
+# --- Herramientas locales / API ---
 python-dotenv>=1.0.1
-openai>=1.50.0
+openai>=1.40.0
 gradio
