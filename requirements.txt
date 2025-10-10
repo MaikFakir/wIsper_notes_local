@@ -1,23 +1,23 @@
 # --- Core ML/Audio Libraries for CUDA 12.1 ---
-# Forcing installation from PyTorch's CUDA 12.1 index to ensure GPU compatibility.
+# Let pip resolve the latest compatible torch versions, while pointing to the CUDA 12.1 index.
 --extra-index-url https://download.pytorch.org/whl/cu121
 torch
-torchaudio
 torchvision
+torchaudio
 
 # --- WhisperX and its dependencies ---
-# Pinning to a stable release instead of the main branch
+# Pinning pyannote.audio to a version that is hopefully stable with modern torch.
 whisperx==3.5.0
+pyannote.audio==3.3.2
 
-# Dependencies from WhisperX's v3.5.0 pyproject.toml for stability
+# Other dependencies from original file.
 ctranslate2>=4.5.0
 faster-whisper>=1.1.1
 nltk>=3.9.1
-numpy>=2.0.2,<2.1.0
-onnxruntime>=1.19,<1.20.0
-pandas>=2.2.3,<2.3.0
+numpy
+onnxruntime
+pandas
 av<16.0.0
-pyannote.audio>=3.3.2,<4.0.0
 transformers>=4.48.0
 
 # --- Application Framework ---
