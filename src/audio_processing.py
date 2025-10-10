@@ -1,58 +1,70 @@
 import whisperx
 import torch
 import os
-import gradio as gr
 import gc
+import gradio as gr
 from datetime import timedelta
 from whisperx.diarize import DiarizationPipeline
 
-# --- 1. CONFIGURACIÓN ---
+# --- 1. CONFIGURACIÓN DEL ENTORNO ---
+# Determina si se usará GPU (CUDA) o CPU y el tipo de cómputo.
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 COMPUTE_TYPE = "float16" if torch.cuda.is_available() else "int8"
+print(f"Usando dispositivo: {DEVICE} con tipo de cómputo: {COMPUTE_TYPE}")
 
 def get_hf_token():
-    """Obtiene el token de Hugging Face desde las variables de entorno."""
+    """
+    Obtiene el token de autenticación de Hugging Face desde las variables de entorno.
+    Este token es necesario para descargar y utilizar los modelos de diarización de pyannote.
+    """
     token = os.environ.get('HF_TOKEN')
     if not token:
-        print("Advertencia: La variable de entorno 'HF_TOKEN' no se ha configurado. La diarización puede fallar.")
+        print("ADVERTENCIA: La variable de entorno 'HF_TOKEN' no está configurada.")
+        print("La diarización (identificación de hablantes) no funcionará.")
     return token
 
 HF_TOKEN = get_hf_token()
 
-# --- 2. CARGA DE MODELOS (CACHEADOS) ---
-model_cache = {}
-diarization_pipeline_cache = None
-align_model_cache = {}
+# --- 2. GESTIÓN DE CACHÉ PARA MODELOS ---
+# Guardamos los modelos en memoria para no tener que recargarlos en cada llamada.
+model_cache = {
+    "transcription": {},
+    "alignment": {}
+}
+diarization_pipeline = None
 
-def get_transcription_model(model_name):
-    """Carga y cachea los modelos de WhisperX."""
-    if model_name not in model_cache:
-        print(f"Cargando modelo de transcripción: {model_name}...")
-        model = whisperx.load_model(model_name, DEVICE, compute_type=COMPUTE_TYPE)
-        model_cache[model_name] = model
-        print(f"Modelo '{model_name}' cargado.")
-    return model_cache[model_name]
+def get_model(model_name, lang_code=None, model_type="transcription"):
+    """
+    Carga y cachea un modelo de WhisperX (transcripción o alineación).
+    """
+    cache = model_cache[model_type]
+    key = model_name if model_type == "transcription" else lang_code
 
-def get_align_model(language_code):
-    """Carga y cachea los modelos de alineación."""
-    if language_code not in align_model_cache:
-        print(f"Cargando modelo de alineación para el idioma: {language_code}...")
-        model, metadata = whisperx.load_align_model(language_code=language_code, device=DEVICE)
-        align_model_cache[language_code] = (model, metadata)
-        print(f"Modelo de alineación para '{language_code}' cargado.")
-    return align_model_cache[language_code]
+    if key not in cache:
+        print(f"Cargando modelo de {model_type} para '{key}'...")
+        if model_type == "transcription":
+            model = whisperx.load_model(key, DEVICE, compute_type=COMPUTE_TYPE)
+        else: # alignment
+            model, metadata = whisperx.load_align_model(language_code=key, device=DEVICE)
+            model = (model, metadata) # Guardamos ambos en la caché
+        cache[key] = model
+        print(f"Modelo de {model_type} para '{key}' cargado y cacheado.")
+    return cache[key]
 
 def get_diarization_pipeline():
-    """Carga y cachea el pipeline de diarización."""
-    global diarization_pipeline_cache
-    if diarization_pipeline_cache is None and HF_TOKEN:
-        print("Cargando pipeline de diarización...")
-        diarization_pipeline_cache = DiarizationPipeline(use_auth_token=HF_TOKEN, device=DEVICE)
-        print("Pipeline de diarización cargado.")
-    return diarization_pipeline_cache
+    """
+    Carga y cachea el pipeline de diarización de pyannote.
+    Solo se carga una vez y si el token de HF está disponible.
+    """
+    global diarization_pipeline
+    if diarization_pipeline is None and HF_TOKEN:
+        print("Cargando pipeline de diarización por primera vez...")
+        diarization_pipeline = DiarizationPipeline(use_auth_token=HF_TOKEN, device=DEVICE)
+        print("Pipeline de diarización cargado y cacheado.")
+    return diarization_pipeline
 
 # --- 3. FUNCIONES AUXILIARES DE FORMATO ---
-def format_timestamp(seconds):
+def format_timestamp(seconds: float) -> str:
     """Convierte segundos a un formato de tiempo HH:MM:SS.ms."""
     td = timedelta(seconds=seconds)
     total_seconds = int(td.total_seconds())
@@ -61,83 +73,81 @@ def format_timestamp(seconds):
     milliseconds = td.microseconds // 1000
     return f"{hours:02}:{minutes:02}:{seconds:02}.{milliseconds:03}"
 
-def format_transcription_with_speakers(result):
-    """Formatea la transcripción final con la información de los hablantes."""
-    lines = []
-    current_speaker = None
-    text_buffer = ""
-    start_time = ""
+def format_diarized_transcription(result: dict) -> str:
+    """
+    Formatea la transcripción con hablantes y timestamps en un formato legible.
+    """
+    segments = result.get("segments", [])
+    if not segments:
+        return "No se detectó texto en el audio."
 
-    for segment in result["segments"]:
-        speaker = segment.get("speaker", "SPEAKER_UNKNOWN")
-
-        if speaker != current_speaker:
-            if current_speaker is not None:
-                lines.append(f"**{current_speaker} ({start_time} - {end_time}):** {text_buffer.strip()}")
-            current_speaker = speaker
-            start_time = format_timestamp(segment['start'])
-            text_buffer = ""
-
-        text_buffer += segment['text'].strip() + " "
+    output = []
+    for segment in segments:
+        start_time = format_timestamp(segment['start'])
         end_time = format_timestamp(segment['end'])
+        speaker = segment.get('speaker', 'SPEAKER_UNKNOWN')
+        text = segment['text'].strip()
+        output.append(f"[{start_time} -> {end_time}] **{speaker}**: {text}")
 
-    if current_speaker is not None:
-        lines.append(f"**{current_speaker} ({start_time} - {end_time}):** {text_buffer.strip()}")
-
-    return "\n\n".join(lines) if lines else "No se pudo generar la transcripción."
-
+    return "\n\n".join(output)
 
 # --- 4. FUNCIÓN PRINCIPAL DE PROCESAMIENTO ---
-def transcribir_con_diarizacion(audio_path, model_name="base", language_code="es"):
+def transcribir_con_diarizacion(audio_path: str, model_name: str, language_code: str):
     """
-    Procesa un audio siguiendo el flujo oficial de WhisperX:
-    1. Transcribe
-    2. Alinea
-    3. Diariza y asigna hablantes
+    Orquesta el proceso completo de transcripción y diarización.
     """
     if not audio_path:
-        gr.Warning("No se recibió audio. Por favor, graba o sube algo.")
-        return "No se recibió audio.", None
+        gr.Warning("No se ha proporcionado ningún archivo de audio.")
+        return "Error: Archivo de audio no encontrado.", None
+
+    gr.Info("Iniciando proceso de transcripción...")
 
     try:
-        # --- Paso 0: Carga de modelos y audio ---
-        transcription_model = get_transcription_model(model_name)
+        # --- PASO 1: Cargar audio ---
         gr.Info(f"Cargando audio desde: {audio_path}")
         audio = whisperx.load_audio(audio_path)
 
-        # --- Paso 1: Transcripción ---
+        # --- PASO 2: Transcripción con WhisperX ---
         gr.Info(f"Transcribiendo con el modelo '{model_name}'...")
+        transcription_model = get_model(model_name, model_type="transcription")
+        # Si no se especifica idioma, whisper lo detecta automáticamente.
         result = transcription_model.transcribe(audio, batch_size=16, language=language_code)
+        detected_lang = result["language"]
+        gr.Info(f"Idioma detectado: {detected_lang.upper()}")
 
-        # --- Paso 2: Alineación ---
-        gr.Info("Alineando marcas de tiempo...")
-        align_model, metadata = get_align_model(result["language"])
-        result = whisperx.align(result["segments"], align_model, metadata, audio, DEVICE, return_char_alignments=False)
+        # --- PASO 3: Alineación de palabras ---
+        gr.Info("Alineando las marcas de tiempo de las palabras...")
+        align_model, align_metadata = get_model(None, lang_code=detected_lang, model_type="alignment")
+        result = whisperx.align(result["segments"], align_model, align_metadata, audio, DEVICE, return_char_alignments=False)
 
-        # --- Paso 3: Diarización y asignación de hablantes ---
-        if HF_TOKEN:
-            diarize_pipeline = get_diarization_pipeline()
-            if diarize_pipeline:
-                gr.Info("Realizando diarización y asignando hablantes...")
-                diarize_segments = diarize_pipeline(audio)
-                result = whisperx.assign_word_speakers(diarize_segments, result)
-                final_transcription = format_transcription_with_speakers(result)
-                gr.Info("Proceso completado.")
-            else:
-                gr.Warning("El pipeline de diarización no se pudo cargar. Se omitirán los hablantes.")
-                final_transcription = " ".join([seg['text'].strip() for seg in result.get("segments", [])])
+        # --- PASO 4: Diarización (si el token está disponible) ---
+        diarize_pipeline = get_diarization_pipeline()
+        if diarize_pipeline:
+            gr.Info("Realizando diarización para identificar hablantes...")
+            diarize_segments = diarize_pipeline(audio)
+            result = whisperx.assign_word_speakers(diarize_segments, result)
+            final_transcription = format_diarized_transcription(result)
+            gr.Info("¡Proceso de transcripción y diarización completado!")
         else:
-            gr.Warning("No se ha configurado el token de Hugging Face (HF_TOKEN). Se omitirá la diarización.")
-            final_transcription = " ".join([seg['text'].strip() for seg in result.get("segments", [])])
+            gr.Warning("Saltando la diarización. No se ha proporcionado HF_TOKEN.")
+            # Formato sin hablantes si no hay diarización
+            final_transcription = "\n".join([segment['text'].strip() for segment in result.get("segments", [])])
+            gr.Info("Proceso de transcripción (sin diarización) completado.")
 
         return final_transcription, audio_path
 
     except Exception as e:
-        error_message = f"Ha ocurrido un error inesperado durante el procesamiento: {e}"
+        error_message = f"Ha ocurrido un error crítico: {str(e)}"
         print(error_message)
+        import traceback
+        traceback.print_exc()
         gr.Error(error_message)
-        return error_message, None
+        return error_message, audio_path # Devolver la ruta para poder reintentar
+
     finally:
-        # Liberar memoria de la GPU
-        torch.cuda.empty_cache()
+        # --- Limpieza de memoria ---
+        print("Liberando memoria de la GPU y recolectando basura...")
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         gc.collect()
+        print("Limpieza de memoria completada.")

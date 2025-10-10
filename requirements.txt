@@ -3,16 +3,20 @@
 torch
 torchaudio
 
-# Dependencies from WhisperX's official pyproject.toml
+# --- WhisperX and its dependencies ---
+# Pinning to a stable release instead of the main branch
+whisperx==3.5.0
+
+# Dependencies from WhisperX's v3.5.0 pyproject.toml for stability
 ctranslate2>=4.5.0
-faster-whisper
+faster-whisper>=1.1.1
 nltk>=3.9.1
-numpy
-onnxruntime<1.20.0,>=1.19
-pandas<2.3.0,>=2.2.3
-pyannote.audio<4.0.0,>=3.3.2
-transformers>=4.48.0
+numpy>=2.0.2,<2.1.0
+onnxruntime>=1.19,<1.20.0
+pandas>=2.2.3,<2.3.0
 av<16.0.0
+pyannote.audio>=3.3.2,<4.0.0
+transformers>=4.48.0
 
 # --- Application Framework ---
 gradio
@@ -20,6 +24,3 @@ gradio
 # --- Other Utilities ---
 librosa
 ffmpeg-python
-
-# --- Install WhisperX itself from GitHub ---
-git+https://github.com/m-bain/whisperx.git
