@@ -8,7 +8,8 @@ torchvision==0.19.1+cu121
 nvidia-cudnn-cu12==9.1.0.70
 
 # --- WhisperX and its dependencies ---
-whisperx==3.5.0
+# Use GitHub source instead of PyPI to avoid the incorrect torch>=2.7.1 requirement.
+git+https://github.com/m-bain/whisperX.git
 ctranslate2>=4.5.0
 faster-whisper>=1.1.1
 nltk>=3.9.1
