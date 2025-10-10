@@ -1,23 +1,31 @@
-# --- PyTorch y Audio ---
+# --- PyTorch con soporte CUDA 12.6 (Colab / GPU opcional) ---
 torch==2.8.0+cu126
 torchaudio==2.8.0+cu126
+# torchvision se puede instalar si la necesitas para visión
+# torchvision==0.18.1+cu126
 
-# --- WhisperX y diarización ---
+# --- WhisperX y dependencias ---
 whisperx==3.5.0
-pyannote.audio>=3.3.2,<4.0.0
+faster-whisper>=1.2.0
+ctranslate2>=4.5.0
+onnxruntime>=1.19,<1.20
+pandas>=2.2.3,<2.3.0
+av<16.0.0
+nltk>=3.9.1
+transformers>=4.48.0
 
-# --- UI ---
-gradio==3.56.0   # versión compatible con numpy 2.x
+# --- Pyannote (diarización) ---
+pyannote.audio>=3.4.0,<4.0.0
 
-# --- Librerías de soporte ---
+# --- Gradio y dependencias web ---
+gradio==3.56.0
+gradio-client==0.5.0
+aiofiles>=22,<24
+markupsafe~=2.1.5
+
+# --- Audio / Ciencia de datos ---
 numpy>=2.0.2,<2.1.0
 scipy>=1.10.0
-tqdm>=4.65.0
 soundfile>=0.12.1
 librosa>=0.10.0
-pandas>=2.2.3,<2.3.0
-nltk>=3.9.1
-av<16.0.0
-ctranslate2>=4.5.0
-faster-whisper>=1.1.1
-onnxruntime>=1.19,<1.20.0
+tqdm>=4.65.0
