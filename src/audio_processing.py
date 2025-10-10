@@ -6,6 +6,12 @@ import gradio as gr
 from datetime import timedelta
 from whisperx.diarize import DiarizationPipeline
 
+# --- DICCIONARIO DE IDIOMAS ---
+SUPPORTED_LANGUAGES = {
+    "Español": "es", "Inglés": "en", "Portugués": "pt", "Francés": "fr",
+    "Alemán": "de", "Italiano": "it", "Japonés": "ja", "Chino": "zh",
+}
+
 # --- 1. CONFIGURACIÓN DEL ENTORNO ---
 # Determina si se usará GPU (CUDA) o CPU y el tipo de cómputo.
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -92,13 +98,21 @@ def format_diarized_transcription(result: dict) -> str:
     return "\n\n".join(output)
 
 # --- 4. FUNCIÓN PRINCIPAL DE PROCESAMIENTO ---
-def transcribir_con_diarizacion(audio_path: str, model_name: str, language_code: str):
+def transcribir_con_diarizacion(audio_path: str, model_name: str, language_name: str):
     """
     Orquesta el proceso completo de transcripción y diarización.
     """
     if not audio_path:
         gr.Warning("No se ha proporcionado ningún archivo de audio.")
         return "Error: Archivo de audio no encontrado.", None
+
+    # Traduce el nombre completo del idioma al código de dos letras.
+    lang_code = SUPPORTED_LANGUAGES.get(language_name, None)
+    if lang_code is None:
+        # Esto no debería ocurrir si la UI está bien configurada, pero es una salvaguarda.
+        error_msg = f"Error: '{language_name}' no es un idioma soportado."
+        gr.Error(error_msg)
+        return error_msg, None
 
     gr.Info("Iniciando proceso de transcripción...")
 
@@ -108,12 +122,12 @@ def transcribir_con_diarizacion(audio_path: str, model_name: str, language_code:
         audio = whisperx.load_audio(audio_path)
 
         # --- PASO 2: Transcripción con WhisperX ---
-        gr.Info(f"Transcribiendo con el modelo '{model_name}'...")
+        gr.Info(f"Transcribiendo con el modelo '{model_name}' en '{language_name}'...")
         transcription_model = get_model(model_name, model_type="transcription")
         # Si no se especifica idioma, whisper lo detecta automáticamente.
-        result = transcription_model.transcribe(audio, batch_size=16, language=language_code)
+        result = transcription_model.transcribe(audio, batch_size=16, language=lang_code)
         detected_lang = result["language"]
-        gr.Info(f"Idioma detectado: {detected_lang.upper()}")
+        gr.Info(f"Idioma utilizado para la transcripción: {detected_lang.upper()}")
 
         # --- PASO 3: Alineación de palabras ---
         gr.Info("Alineando las marcas de tiempo de las palabras...")
