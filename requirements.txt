@@ -1,32 +1,17 @@
-# --- PyTorch stack (CUDA 12.1 compatible con Colab GPU) ---
---extra-index-url https://download.pytorch.org/whl/cu121
-torch==2.4.1+cu121
-torchaudio==2.4.1+cu121
-torchvision==0.19.1+cu121
+--extra-index-url https://download.pytorch.org/whl/cu126
 
-# --- WhisperX versión estable (no requiere torch>=2.7) ---
+torch==2.4.0
+torchaudio==2.4.0
+torchvision==0.19.0
+
+faster-whisper==1.0.0
 whisperx==3.2.0
 
-# --- Dependencias compatibles con WhisperX 3.2.0 ---
-faster-whisper==1.0.0
-ctranslate2>=4.0.0,<4.6.0
-pyannote.audio==3.1.1
-transformers>=4.35.0,<4.46.0
-onnxruntime>=1.17.0,<1.20.0
-numpy>=1.25.0,<2.0.0
-pandas>=2.2.0,<2.3.0
-nltk>=3.8.0
-tqdm>=4.66.0
-av<16.0.0
-
-# --- Audio / video / utilidades ---
-ffmpeg-python>=0.2.0
-librosa>=0.10.1
-pydub>=0.25.1
-moviepy>=1.0.3
-SpeechRecognition>=3.9.0
-
-# --- Herramientas locales / API ---
-python-dotenv>=1.0.1
-openai>=1.40.0
-gradio
+customtkinter==5.2.1
+moviepy==1.0.3
+openai==1.36.0
+pyaudio==0.2.14
+pydub==0.25.1
+python-dotenv==1.0.1
+pytubefix==6.5.2
+SpeechRecognition==3.9.0
