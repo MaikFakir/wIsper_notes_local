@@ -49,8 +49,10 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
                     with gr.Row():
                         model_selector = gr.Dropdown(["tiny", "base", "small", "medium", "large-v2", "large-v3"], label="🤖 Modelo", value="base")
                         language_selector = gr.Dropdown(list(SUPPORTED_LANGUAGES.keys()), label="🗣️ Idioma", value="Español")
+                        device_selector = gr.Dropdown(["GPU", "CPU"], label="⚙️ Dispositivo", value="GPU")
                     audio_input = gr.Audio(sources=["microphone", "upload"], type="filepath", label="🎤 Graba o sube tu audio")
                     transcribe_button = gr.Button("🚀 Transcribir", variant="primary")
+                    status_box = gr.Markdown(visible=False) # Para mostrar advertencias (ej. GPU no disponible)
                     text_box = gr.Textbox(label="📝 Transcripción", lines=15, interactive=False, show_copy_button=True)
                     with gr.Row():
                         save_folder_dropdown = gr.Dropdown(label="Guardar en...", choices=get_all_directories(), interactive=True, scale=3)
@@ -85,18 +87,26 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
     # --- LÓGICA DE LA INTERFAZ ---
 
     # --- Pestaña Principal ---
-    def handle_transcription_request(audio_path, model_name, language_name):
+    def handle_transcription_request(audio_path, model_name, language_name, device_choice):
         """
-        Toma el nombre del idioma de la UI, lo convierte al código de dos letras
-        y luego llama a la función de transcripción principal.
+        Prepara y llama a la función de transcripción principal, manejando la lógica de la UI.
         """
-        language_code = SUPPORTED_LANGUAGES.get(language_name, "es") # 'es' por defecto
-        return transcribir_con_diarizacion(audio_path, model_name, language_code)
+        language_code = SUPPORTED_LANGUAGES.get(language_name, "es")
+
+        transcription, audio_path_out, warning = transcribir_con_diarizacion(
+            audio_path, model_name, language_code, device_choice
+        )
+
+        status_update = gr.update(visible=False, value="")
+        if warning:
+            status_update = gr.update(visible=True, value=f"**Aviso:** {warning}")
+
+        return status_update, transcription, audio_path_out
 
     transcribe_button.click(
         fn=handle_transcription_request,
-        inputs=[audio_input, model_selector, language_selector],
-        outputs=[text_box, processed_audio_path_state]
+        inputs=[audio_input, model_selector, language_selector, device_selector],
+        outputs=[status_box, text_box, processed_audio_path_state]
     )
     save_button.click(
         fn=save_transcription_to_library,
