@@ -85,8 +85,16 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
     # --- LÓGICA DE LA INTERFAZ ---
 
     # --- Pestaña Principal ---
+    def handle_transcription_request(audio_path, model_name, language_name):
+        """
+        Toma el nombre del idioma de la UI, lo convierte al código de dos letras
+        y luego llama a la función de transcripción principal.
+        """
+        language_code = SUPPORTED_LANGUAGES.get(language_name, "es") # 'es' por defecto
+        return transcribir_con_diarizacion(audio_path, model_name, language_code)
+
     transcribe_button.click(
-        fn=transcribir_con_diarizacion,
+        fn=handle_transcription_request,
         inputs=[audio_input, model_selector, language_selector],
         outputs=[text_box, processed_audio_path_state]
     )
