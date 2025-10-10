@@ -7,10 +7,10 @@ whisperx==3.5.0
 pyannote.audio>=3.3.2,<4.0.0
 
 # --- UI ---
-gradio==3.44.0
+gradio==3.56.0   # versión compatible con numpy 2.x
 
 # --- Librerías de soporte ---
-numpy>=1.24.0
+numpy>=2.0.2,<2.1.0
 scipy>=1.10.0
 tqdm>=4.65.0
 soundfile>=0.12.1
