@@ -6,6 +6,13 @@ import gradio as gr
 from datetime import timedelta
 from whisperx.diarize import DiarizationPipeline
 
+# --- CONFIGURACIÓN DE REPRODUCIBILIDAD DE CUDA ---
+# Habilita TF32 para mejorar el rendimiento en GPUs compatibles (Ampere y posteriores)
+# y solucionar problemas de compatibilidad con cuDNN en algunos entornos como Colab.
+# Referencia: https://github.com/pyannote/pyannote-audio/issues/1370
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
 def get_hf_token():
     """
     Obtiene el token de autenticación de Hugging Face desde las variables de entorno.
