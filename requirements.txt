@@ -1,15 +1,13 @@
-# --- Core ML/Audio Libraries for CUDA 12.4 (Colab Oct 2025) ---
+# --- PyTorch stack (CUDA 12.1, Colab Oct 2025) ---
 --extra-index-url https://download.pytorch.org/whl/cu121
 torch==2.4.1+cu121
 torchaudio==2.4.1+cu121
 torchvision==0.19.1+cu121
 
-# --- cuDNN (matching Colab's system) ---
-nvidia-cudnn-cu12==9.1.0.70
-
-# --- WhisperX and its dependencies ---
-# Use GitHub source instead of PyPI to avoid the incorrect torch>=2.7.1 requirement.
+# --- WhisperX (última versión estable desde GitHub) ---
 git+https://github.com/m-bain/whisperX.git
+
+# --- Core dependencies ---
 ctranslate2>=4.5.0
 faster-whisper>=1.1.1
 nltk>=3.9.1
@@ -20,9 +18,18 @@ av<16.0.0
 pyannote.audio>=3.3.2,<4.0.0
 transformers>=4.48.0
 
-# --- Application Framework ---
-gradio
-
-# --- Other Utilities ---
+# --- Audio/Video utilities ---
 librosa
 ffmpeg-python
+moviepy>=1.0.3
+pydub>=0.25.1
+SpeechRecognition>=3.9.0
+
+# --- Optional local tools (no afectan Colab, pero útiles localmente) ---
+customtkinter==5.2.1     # Ignorado en Colab
+pyaudio==0.2.14           # Ignorado en Colab si no hay micrófono físico
+
+# --- Environment / API helpers ---
+python-dotenv>=1.0.1
+openai>=1.50.0
+gradio
