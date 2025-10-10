@@ -1,19 +1,15 @@
 # --- Core ML / Audio Libraries ---
 torch==2.8.0+cu126
 torchaudio==2.8.0+cu126
-torchvision==0.15.2+cu126
--f https://download.pytorch.org/whl/cu126/torch_stable.html
+whisperx==3.5.0
+pyannote.audio==2.1.1
 
-whisperx==2.3.3
-pyannote.audio==3.1.1
-torchmetrics==1.0.0
+# --- Gradio para la UI ---
+gradio==3.44.0
 
-# --- Utilities ---
-gradio==3.44.1
-numpy==1.26.0
-scipy==1.11.2
-pandas==2.1.1
-
-# --- Audio Backend ---
-soundfile==0.12.1
-librosa==0.10.2
+# --- Dependencias adicionales que WhisperX y Pyannote pueden necesitar ---
+numpy>=1.24.0
+scipy>=1.10.0
+tqdm>=4.65.0
+soundfile>=0.12.1
+librosa>=0.10.0
