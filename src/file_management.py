@@ -230,6 +230,41 @@ def move_library_item(current_path, selection, destination_folder):
 
 # --- HANDLERS PARA LA UI ---
 
+def get_audio_files_in_folder(path="."):
+    """
+    Obtiene solo los archivos de audio de una carpeta específica.
+    """
+    path = os.path.normpath(path)
+    if path.startswith("..") or os.path.isabs(path):
+        path = "."
+
+    base_path = os.path.join(AUDIO_LIBRARY_PATH, path)
+    if not os.path.exists(base_path):
+        return []
+
+    audio_files = []
+    for item in sorted(os.listdir(base_path)):
+        if os.path.isfile(os.path.join(base_path, item)) and item.lower().endswith(('.wav', '.mp3', '.flac')):
+            audio_files.append(item)
+    return audio_files
+
+def load_viewer_data(folder_path, filename):
+    """
+    Carga el audio y la transcripción para un archivo seleccionado en el visualizador.
+    """
+    if not folder_path or not filename:
+        # No selection, return empty updates
+        return gr.update(value=None), gr.update(value="")
+
+    file_path_in_library = os.path.join(AUDIO_LIBRARY_PATH, folder_path, filename)
+    metadata_key = os.path.normpath(os.path.join(folder_path, filename))
+
+    metadata = load_metadata()
+    transcription = metadata.get(metadata_key, {}).get("transcription", "Transcripción no encontrada.")
+
+    return gr.update(value=file_path_in_library), gr.update(value=transcription)
+
+
 def handle_folder_change(selected_folder):
     """
     Se activa al cambiar el dropdown de carpetas.
@@ -242,21 +277,35 @@ def handle_file_selection(selection, current_path):
     Se activa al seleccionar un ítem en la lista de archivos.
     Si es una carpeta, navega. Si es un archivo, lo carga en el visualizador.
     """
+    # Siempre debe devolver 6 valores para coincidir con los outputs de la UI
     if selection is None:
-        return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+        return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
     if selection.startswith("[C]"):
         folder_name = selection.replace("[C] ", "")
         new_path = os.path.join(current_path, folder_name)
         # Actualiza el dropdown de la barra lateral al nuevo path
         # y la lista de archivos de la pestaña de archivos
-        return gr.update(value=new_path), gr.update(choices=get_folder_items(new_path), value=None), gr.update(), gr.update(), gr.update()
-    else:
+        return (
+            gr.update(value=new_path),  # current_path_state
+            gr.update(choices=get_folder_items(new_path), value=None),  # library_browser
+            gr.update(),  # selected_audio_player
+            gr.update(),  # selected_transcription_display
+            gr.update(),  # tabs
+            gr.update(value=new_path)  # folder_selector_sidebar
+        )
+    else: # Es un archivo
         file_path_in_library = os.path.join(AUDIO_LIBRARY_PATH, current_path, selection)
         metadata_key = os.path.normpath(os.path.join(current_path, selection))
-
         metadata = load_metadata()
         transcription = metadata.get(metadata_key, {}).get("transcription", "Transcripción no encontrada.")
 
         # Cambiar a la pestaña del visualizador y cargar los datos
-        return gr.update(), gr.update(), gr.update(value=file_path_in_library), gr.update(value=transcription), gr.update(selected_tab=2)
+        return (
+            gr.update(),  # current_path_state
+            gr.update(),  # library_browser
+            gr.update(value=file_path_in_library),  # selected_audio_player
+            gr.update(value=transcription),  # selected_transcription_display
+            gr.update(selected=2),  # tabs
+            gr.update()  # folder_selector_sidebar
+        )

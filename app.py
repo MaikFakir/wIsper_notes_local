@@ -12,6 +12,8 @@ from src.file_management import (
     get_folder_items,
     handle_folder_change,
     handle_file_selection,
+    get_audio_files_in_folder,
+    load_viewer_data,
 )
 
 # --- LISTAS Y VARIABLES GLOBALES ---
@@ -80,6 +82,20 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
 
                 with gr.TabItem("👁️ Visualizador", id=2):
                     gr.Markdown("## Visualizador de Audio Guardado")
+                    with gr.Row():
+                        viewer_folder_selector = gr.Dropdown(
+                            label="Seleccionar Carpeta",
+                            choices=get_all_directories(),
+                            value=".",
+                            interactive=True,
+                            scale=1
+                        )
+                        viewer_file_selector = gr.Radio(
+                            label="Seleccionar Archivo de Audio",
+                            choices=[], # Se llenará dinámicamente
+                            interactive=True,
+                            scale=2
+                        )
                     selected_audio_player = gr.Audio(label="Audio Seleccionado", type="filepath", interactive=False)
                     selected_transcription_display = gr.Textbox(label="Transcripción Guardada", lines=15, interactive=False, show_copy_button=True)
 
@@ -116,7 +132,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
     library_browser.change(
         fn=handle_file_selection,
         inputs=[library_browser, current_path_state],
-        outputs=[current_path_state, library_browser, selected_audio_player, selected_transcription_display, tabs]
+        outputs=[current_path_state, library_browser, selected_audio_player, selected_transcription_display, tabs, folder_selector_sidebar]
     )
 
     def on_create_folder(current_path, new_folder):
@@ -145,6 +161,25 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         fn=move_library_item,
         inputs=[current_path_state, library_browser, destination_folder_dropdown],
         outputs=[library_browser]
+    )
+
+    # --- Lógica del Visualizador ---
+    def update_viewer_files(folder_path):
+        """Actualiza la lista de archivos cuando se cambia la carpeta en el visualizador."""
+        files = get_audio_files_in_folder(folder_path)
+        # Limpia los componentes de salida al cambiar de carpeta
+        return gr.update(choices=files, value=None), gr.update(value=None), gr.update(value="")
+
+    viewer_folder_selector.change(
+        fn=update_viewer_files,
+        inputs=[viewer_folder_selector],
+        outputs=[viewer_file_selector, selected_audio_player, selected_transcription_display]
+    )
+
+    viewer_file_selector.change(
+        fn=load_viewer_data,
+        inputs=[viewer_folder_selector, viewer_file_selector],
+        outputs=[selected_audio_player, selected_transcription_display]
     )
 
     def refresh_all_views(current_path):
