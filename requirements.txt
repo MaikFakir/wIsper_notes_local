@@ -1,26 +1,16 @@
-# --- PyTorch stack (CUDA 12.6, compatible con Colab 2025) ---
---extra-index-url https://download.pytorch.org/whl/cu126
-torch==2.4.1+cu126
-torchaudio==2.4.1+cu126
-torchvision==0.19.1+cu126
+# --- PyTorch stack (CUDA 12.6 en Colab Oct 2025) ---
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.4.1
+torchaudio==2.4.1
 
-# --- WhisperX estable (usa sus propias dependencias internas) ---
+# --- cuDNN compatible ---
+nvidia-cudnn-cu12==9.1.0.70
+
+# --- WhisperX estable ---
 whisperx==3.2.0
 
-# --- Audio / video / utilidades ---
-ffmpeg-python>=0.2.0
+# --- Audio processing ---
 librosa>=0.10.1
 pydub>=0.25.1
-moviepy>=1.0.3
-SpeechRecognition>=3.9.0
-# PyAudio requiere portaudio19-dev para instalarse en Linux/Colab
 pyaudio==0.2.14
-
-# --- Interfaz y API ---
-customtkinter==5.2.1
-python-dotenv>=1.0.1
-openai>=1.40.0
-gradio
-
-# --- Extras ---
-pytubefix==6.5.2
+ffmpeg-python>=0.2.0
