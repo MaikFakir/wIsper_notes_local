@@ -1,15 +1,14 @@
-# --- Core ML/Audio Libraries for CUDA 12.1 ---
-# Forcing installation from PyTorch's CUDA 12.1 index to ensure GPU compatibility.
+# --- Core ML/Audio Libraries for CUDA 12.4 (Colab Oct 2025) ---
 --extra-index-url https://download.pytorch.org/whl/cu121
-torch
-torchaudio
-torchvision
+torch==2.4.1+cu121
+torchaudio==2.4.1+cu121
+torchvision==0.19.1+cu121
+
+# --- cuDNN (matching Colab's system) ---
+nvidia-cudnn-cu12==9.1.0.70
 
 # --- WhisperX and its dependencies ---
-# Pinning to a stable release instead of the main branch
 whisperx==3.5.0
-
-# Dependencies from WhisperX's v3.5.0 pyproject.toml for stability
 ctranslate2>=4.5.0
 faster-whisper>=1.1.1
 nltk>=3.9.1
